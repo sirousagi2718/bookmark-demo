@@ -139,8 +139,10 @@ describe("worker bookmarks API", () => {
   it("clears R2 and seeds D1 during the scheduled reset", async () => {
     const deleteObjects = vi.fn();
     const batch = vi.fn();
-    const bind = vi.fn(() => ({}));
-    const prepare = vi.fn(() => ({ bind }));
+    const prepare = vi.fn((sql: string) => ({
+      sql,
+      bind: vi.fn((...bindings: unknown[]) => ({ sql, bindings }))
+    }));
     const env = {
       DB: {
         prepare,
@@ -172,7 +174,27 @@ describe("worker bookmarks API", () => {
     expect(deleteObjects).toHaveBeenNthCalledWith(1, ["ogp/one.png", "ogp/two.png"]);
     expect(deleteObjects).toHaveBeenNthCalledWith(2, ["ogp/three.png"]);
     expect(prepare).toHaveBeenCalledTimes(17);
-    expect(batch).toHaveBeenCalledWith(expect.arrayContaining([expect.any(Object)]));
+    expect(batch).toHaveBeenCalledTimes(1);
+
+    const [statements] = batch.mock.calls[0] as [Array<{ sql: string; bindings?: unknown[] }>];
+    expect(statements).toHaveLength(17);
+    expect(statements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sql: "DELETE FROM bookmarks" }),
+        expect.objectContaining({
+          sql: "DELETE FROM sqlite_sequence WHERE name = ?",
+          bindings: ["bookmarks"]
+        }),
+        expect.objectContaining({
+          sql: "INSERT INTO bookmarks (url, title, tags, memo, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+          bindings: expect.arrayContaining([
+            "https://developers.cloudflare.com/workers/",
+            "Cloudflare Workers Documentation",
+            "cloudflare, workers, docs"
+          ])
+        })
+      ])
+    );
   });
 
   it("only runs the scheduled reset when DEMO is true", async () => {
@@ -205,6 +227,61 @@ describe("worker bookmarks API", () => {
       {} as ScheduledController,
       { ...env, DEMO: "true" } as unknown as Parameters<NonNullable<typeof worker.scheduled>>[1]
     );
+
+    expect(env.OGP_BUCKET.list).toHaveBeenCalledWith({ cursor: undefined });
+    expect(env.DB.batch).toHaveBeenCalled();
+  });
+
+  it("rejects scheduled reset when R2 listing fails before touching D1", async () => {
+    const env = {
+      DB: {
+        prepare: vi.fn(),
+        batch: vi.fn()
+      },
+      OGP_BUCKET: {
+        list: vi.fn().mockRejectedValueOnce(new Error("list fail")),
+        delete: vi.fn()
+      },
+      ASSETS: {
+        fetch: vi.fn()
+      },
+      DEMO: "true"
+    };
+
+    await expect(
+      worker.scheduled?.(
+        {} as ScheduledController,
+        env as unknown as Parameters<NonNullable<typeof worker.scheduled>>[1]
+      )
+    ).rejects.toThrow("list fail");
+
+    expect(env.OGP_BUCKET.list).toHaveBeenCalledWith({ cursor: undefined });
+    expect(env.DB.batch).not.toHaveBeenCalled();
+  });
+
+  it("rejects scheduled reset when D1 seeding fails after clearing R2", async () => {
+    const bind = vi.fn(() => ({}));
+    const env = {
+      DB: {
+        prepare: vi.fn(() => ({ bind })),
+        batch: vi.fn().mockRejectedValueOnce(new Error("batch fail"))
+      },
+      OGP_BUCKET: {
+        list: vi.fn().mockResolvedValueOnce({ objects: [], truncated: false }),
+        delete: vi.fn()
+      },
+      ASSETS: {
+        fetch: vi.fn()
+      },
+      DEMO: "true"
+    };
+
+    await expect(
+      worker.scheduled?.(
+        {} as ScheduledController,
+        env as unknown as Parameters<NonNullable<typeof worker.scheduled>>[1]
+      )
+    ).rejects.toThrow("batch fail");
 
     expect(env.OGP_BUCKET.list).toHaveBeenCalledWith({ cursor: undefined });
     expect(env.DB.batch).toHaveBeenCalled();
