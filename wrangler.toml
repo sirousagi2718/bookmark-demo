@@ -10,7 +10,7 @@ not_found_handling = "single-page-application"
 [[d1_databases]]
 binding = "DB"
 database_name = "bookmark-demo"
-database_id = "replace-with-d1-database-id"
+database_id = "0cda4a8c-a983-4573-b4af-88b9e5f244f1"
 migrations_dir = "migrations"
 
 [[r2_buckets]]

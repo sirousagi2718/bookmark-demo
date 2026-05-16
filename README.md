@@ -46,8 +46,23 @@ npm run dev
 - `npm run dev` starts the local Cloudflare Worker development server.
 - `npm run dev:client` starts only the Vite client dev server.
 - `npm run build` type-checks, builds the client, and dry-runs the Worker bundle.
+- `npm run deploy` type-checks, builds the client, and deploys the Worker to Cloudflare.
 - `npm run preview` also starts the local Cloudflare Worker development server.
 - `npm test` runs unit and UI tests.
+
+## Deploy
+
+This demo app is deployed manually from a local machine. It does not use GitHub
+Actions.
+
+Before deploying, make sure the D1 database id in `wrangler.toml` has been
+replaced with the real value from Cloudflare. Then apply the remote migration and
+deploy:
+
+```sh
+npx wrangler d1 migrations apply bookmark-demo --remote
+npm run deploy
+```
 
 ## Initial Scope
 
