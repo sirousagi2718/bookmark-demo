@@ -65,6 +65,13 @@ npx wrangler d1 migrations apply bookmark-demo --remote
 npm run deploy
 ```
 
+## Demo Reset
+
+The deployed Worker has a scheduled trigger that runs once every hour. When
+`DEMO=true` is set in `wrangler.toml`, it clears all objects from the configured
+R2 bucket, deletes all D1 bookmark rows, and loads 15 demo bookmarks from
+`src/worker/seed-bookmarks.json`.
+
 ## Initial Scope
 
 Bookmarks are created from a URL. The Worker fetches the page HTML, extracts the
