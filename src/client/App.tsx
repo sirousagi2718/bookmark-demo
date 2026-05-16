@@ -33,6 +33,34 @@ const splitTags = (tags: string) =>
     .map((tag) => tag.trim())
     .filter(Boolean);
 
+const readUrlState = () => {
+  const params = new URLSearchParams(window.location.search);
+  const pageParam = Number(params.get("page") ?? "1");
+
+  return {
+    page: Number.isInteger(pageParam) && pageParam > 0 ? pageParam : 1,
+    query: params.get("q")?.trim() ?? ""
+  };
+};
+
+const pushUrlState = (targetPage: number, targetQuery: string) => {
+  const params = new URLSearchParams();
+  const trimmedQuery = targetQuery.trim();
+
+  if (targetPage > 1) {
+    params.set("page", String(targetPage));
+  }
+
+  if (trimmedQuery) {
+    params.set("q", trimmedQuery);
+  }
+
+  // pushState updates the address bar and browser history without reloading the
+  // React app. Beginners can think of it as "change the URL for this screen".
+  const nextUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
+  window.history.pushState({ page: targetPage, query: trimmedQuery }, "", nextUrl);
+};
+
 const readError = async (response: Response) => {
   try {
     // The API returns errors as JSON: { "error": "message" }.
@@ -50,6 +78,8 @@ export function App() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<FormState>(emptyForm);
+  const [searchInput, setSearchInput] = useState("");
+  const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
@@ -57,13 +87,20 @@ export function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadBookmarks = useCallback(async (targetPage = page) => {
+  const loadBookmarks = useCallback(async (targetPage = page, targetQuery = query) => {
     setIsLoading(true);
     setError(null);
 
     try {
+      const params = new URLSearchParams({ page: String(targetPage) });
+      const trimmedQuery = targetQuery.trim();
+      if (trimmedQuery) {
+        // The Worker splits this value by spaces and OR-searches each word.
+        params.set("q", trimmedQuery);
+      }
+
       // Relative URLs call the same Worker that serves this React app.
-      const response = await fetch(`/api/bookmarks?page=${targetPage}`);
+      const response = await fetch(`/api/bookmarks?${params.toString()}`);
       if (!response.ok) {
         throw new Error(await readError(response));
       }
@@ -78,11 +115,14 @@ export function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [page]);
+  }, [page, query]);
 
   useEffect(() => {
+    const initialState = readUrlState();
+    setSearchInput(initialState.query);
+    setQuery(initialState.query);
     // useEffect cannot be async directly, so we start the async function here.
-    void loadBookmarks(1);
+    void loadBookmarks(initialState.page, initialState.query);
   }, []);
 
   const updateForm = (field: keyof FormState, value: string) => {
@@ -117,7 +157,7 @@ export function App() {
       await response.json() as CreateBookmarkResponse;
       setForm(emptyForm);
       setEditingId(null);
-      await loadBookmarks(1);
+      await loadBookmarks(1, query);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Failed to save bookmark.");
     } finally {
@@ -160,7 +200,7 @@ export function App() {
 
       setEditingId(null);
       setEditForm(emptyForm);
-      await loadBookmarks(page);
+      await loadBookmarks(page, query);
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : "Failed to update bookmark.");
     } finally {
@@ -187,7 +227,7 @@ export function App() {
 
       setEditingId(null);
       const targetPage = bookmarks.length === 1 && page > 1 ? page - 1 : page;
-      await loadBookmarks(targetPage);
+      await loadBookmarks(targetPage, query);
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Failed to delete bookmark.");
     } finally {
@@ -201,7 +241,28 @@ export function App() {
     }
 
     setEditingId(null);
-    await loadBookmarks(targetPage);
+    pushUrlState(targetPage, query);
+    await loadBookmarks(targetPage, query);
+  };
+
+  const handleSearch = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const nextQuery = searchInput.trim();
+    // Store the active query separately from what the user is typing. This keeps
+    // pagination stable until the user submits the search form.
+    setQuery(nextQuery);
+    setEditingId(null);
+    pushUrlState(1, nextQuery);
+    await loadBookmarks(1, nextQuery);
+  };
+
+  const clearSearch = async () => {
+    setSearchInput("");
+    setQuery("");
+    setEditingId(null);
+    pushUrlState(1, "");
+    await loadBookmarks(1, "");
   };
 
   return (
@@ -236,9 +297,32 @@ export function App() {
         </div>
       ) : null}
 
+      <form className="search-form" onSubmit={handleSearch}>
+        <label className="sr-only" htmlFor="bookmark-search">
+          Search bookmarks
+        </label>
+        <input
+          id="bookmark-search"
+          type="search"
+          value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)}
+          placeholder="Search URL, title, tags, or memo"
+        />
+        <button type="submit" disabled={isLoading}>
+          Search
+        </button>
+        {query ? (
+          <button type="button" className="secondary-button" onClick={clearSearch}>
+            Clear
+          </button>
+        ) : null}
+      </form>
+
       <section className="bookmark-list" aria-label="Bookmarks">
         <div className="list-summary">
-          <span>{totalCount} bookmarks</span>
+          <span>
+            {totalCount} bookmarks{query ? ` matching "${query}"` : ""}
+          </span>
           <span>
             Page {page} of {totalPages}
           </span>

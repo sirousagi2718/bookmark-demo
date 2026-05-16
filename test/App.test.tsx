@@ -30,6 +30,7 @@ const bookmarksResponse = (
   });
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/");
   vi.stubGlobal("fetch", mockFetch);
 });
 
@@ -156,5 +157,57 @@ describe("App", () => {
 
     expect(await screen.findByRole("link", { name: "Next page" })).toBeInTheDocument();
     expect(mockFetch).toHaveBeenLastCalledWith("/api/bookmarks?page=2");
+  });
+
+  it("searches bookmarks and keeps the query in pagination", async () => {
+    mockFetch
+      .mockResolvedValueOnce(bookmarksResponse([]))
+      .mockResolvedValueOnce(
+        bookmarksResponse([makeBookmark({ title: "Search result" })], {
+          page: 1,
+          totalCount: 11,
+          totalPages: 2
+        })
+      )
+      .mockResolvedValueOnce(
+        bookmarksResponse([makeBookmark({ id: 2, title: "More results" })], {
+          page: 2,
+          totalCount: 11,
+          totalPages: 2
+        })
+      );
+
+    render(<App />);
+
+    await screen.findByText("No bookmarks yet.");
+    await userEvent.type(screen.getByLabelText("Search bookmarks"), "bookmark social");
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(await screen.findByRole("link", { name: "Search result" })).toBeInTheDocument();
+    expect(mockFetch).toHaveBeenLastCalledWith("/api/bookmarks?page=1&q=bookmark+social");
+    expect(window.location.search).toBe("?q=bookmark+social");
+
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(await screen.findByRole("link", { name: "More results" })).toBeInTheDocument();
+    expect(mockFetch).toHaveBeenLastCalledWith("/api/bookmarks?page=2&q=bookmark+social");
+    expect(window.location.search).toBe("?page=2&q=bookmark+social");
+  });
+
+  it("loads the initial search state from the URL", async () => {
+    window.history.replaceState(null, "", "/?page=2&q=docs");
+    mockFetch.mockResolvedValueOnce(
+      bookmarksResponse([makeBookmark({ title: "URL state result" })], {
+        page: 2,
+        totalCount: 11,
+        totalPages: 2
+      })
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("link", { name: "URL state result" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Search bookmarks")).toHaveValue("docs");
+    expect(mockFetch).toHaveBeenLastCalledWith("/api/bookmarks?page=2&q=docs");
   });
 });

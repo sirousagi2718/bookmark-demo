@@ -71,15 +71,53 @@ const parseBookmarkId = (value: string) => {
   return Number.isInteger(id) && id > 0 ? id : null;
 };
 
+const escapeLikeTerm = (term: string) =>
+  // In SQL LIKE, "%" and "_" are wildcards. Escape them so a search for "100%"
+  // means the literal text "100%" instead of "100 plus anything".
+  term.replace(/[\\%_]/g, (character) => `\\${character}`);
+
+const parseSearchTerms = (value: string | undefined) =>
+  cleanText(value)
+    .split(/\s+/)
+    .map((term) => term.trim())
+    .filter(Boolean);
+
+const buildSearchFilter = (terms: string[]) => {
+  if (terms.length === 0) {
+    return {
+      sql: "",
+      bindings: [] as string[]
+    };
+  }
+
+  // Each word becomes one OR group across the searchable fields. For example,
+  // "cloudflare hono" matches rows containing either word in URL, title, tags,
+  // or memo.
+  const sql = terms
+    .map(() => "(url LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\' OR memo LIKE ? ESCAPE '\\')")
+    .join(" OR ");
+  const bindings = terms.flatMap((term) => {
+    const pattern = `%${escapeLikeTerm(term)}%`;
+    return [pattern, pattern, pattern, pattern];
+  });
+
+  return {
+    sql: `WHERE ${sql}`,
+    bindings
+  };
+};
+
 app.get("/api/bookmarks", async (c) => {
   const pageParam = Number(c.req.query("page") ?? "1");
   const requestedPage = Number.isInteger(pageParam) && pageParam > 0 ? pageParam : 1;
+  const searchTerms = parseSearchTerms(c.req.query("q"));
+  const searchFilter = buildSearchFilter(searchTerms);
 
   // Count first so we know the real last page. Without this, asking for a page
   // past the end would calculate an offset that returns an empty list.
-  const count = await c.env.DB.prepare("SELECT COUNT(*) AS total FROM bookmarks").first<{
-    total: number;
-  }>();
+  const count = await c.env.DB.prepare(`SELECT COUNT(*) AS total FROM bookmarks ${searchFilter.sql}`)
+    .bind(...searchFilter.bindings)
+    .first<{ total: number }>();
   const totalCount = count?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
   const page = Math.min(requestedPage, totalPages);
@@ -88,9 +126,9 @@ app.get("/api/bookmarks", async (c) => {
   // LIMIT controls how many rows are returned. OFFSET skips rows from earlier
   // pages, so page 2 starts after the first 10 bookmarks.
   const result = await c.env.DB.prepare(
-    "SELECT id, url, title, tags, memo, created_at, updated_at FROM bookmarks ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
+    `SELECT id, url, title, tags, memo, created_at, updated_at FROM bookmarks ${searchFilter.sql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`
   )
-    .bind(PAGE_SIZE, offset)
+    .bind(...searchFilter.bindings, PAGE_SIZE, offset)
     .all<BookmarkRow>();
 
   return c.json({
