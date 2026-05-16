@@ -262,6 +262,18 @@ describe("App", () => {
     expect(mockFetch).toHaveBeenLastCalledWith("/api/bookmarks?page=2&q=docs");
   });
 
+  it("shows error and preserves query on failed search", async () => {
+    window.history.replaceState(null, "", "/?q=fail");
+    mockFetch.mockResolvedValueOnce(Response.json({ error: "Search failed." }, { status: 500 }));
+
+    render(<App />);
+
+    expect(await screen.findByText("Search failed.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Search bookmarks")).toHaveValue("fail");
+    expect(mockFetch).toHaveBeenLastCalledWith("/api/bookmarks?page=1&q=fail");
+    expect(window.location.search).toBe("?q=fail");
+  });
+
   it("reloads bookmarks when browser history changes", async () => {
     mockFetch
       .mockResolvedValueOnce(bookmarksResponse([]))
