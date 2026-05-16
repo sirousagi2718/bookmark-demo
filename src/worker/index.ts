@@ -42,16 +42,20 @@ app.get("/api/bookmarks", async (c) => {
 });
 
 app.post("/api/bookmarks", async (c) => {
-  let payload: CreateBookmarkRequest;
+  let payload: unknown;
 
   try {
     // c.req.json() reads the request body and parses JSON sent by the browser.
-    payload = await c.req.json<CreateBookmarkRequest>();
+    payload = await c.req.json();
   } catch {
     return c.json({ error: "Request body must be valid JSON." }, 400);
   }
 
-  if (typeof payload.url !== "string") {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    typeof (payload as CreateBookmarkRequest).url !== "string"
+  ) {
     return c.json({ error: "URL is required." }, 400);
   }
 
@@ -59,7 +63,7 @@ app.post("/api/bookmarks", async (c) => {
   try {
     // Normalize before saving so small differences like fragments do not create
     // duplicate-looking bookmarks.
-    url = normalizeUrl(payload.url);
+    url = normalizeUrl((payload as CreateBookmarkRequest).url);
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "Invalid URL." }, 400);
   }

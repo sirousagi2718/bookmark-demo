@@ -37,4 +37,28 @@ describe("fetchPageTitle", () => {
 
     await expect(fetchPageTitle("https://example.com", fetcher as typeof fetch)).resolves.toBeNull();
   });
+
+  it("aborts slow title requests", async () => {
+    vi.useFakeTimers();
+
+    const fetcher = vi.fn(
+      (_url: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+        })
+    );
+
+    const result = fetchPageTitle("https://example.com", fetcher as typeof fetch);
+    await vi.advanceTimersByTimeAsync(4000);
+
+    await expect(result).resolves.toBeNull();
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://example.com",
+      expect.objectContaining({
+        signal: expect.any(AbortSignal)
+      })
+    );
+
+    vi.useRealTimers();
+  });
 });

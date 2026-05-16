@@ -73,7 +73,7 @@ The migration creates the `bookmarks` table used by the app.
 
 ## Run Locally
 
-Build the React app and start the Worker:
+Build the client, then start the local Cloudflare Worker development server:
 
 ```sh
 npm run build

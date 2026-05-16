@@ -34,11 +34,11 @@ Apply the D1 migration locally:
 npx wrangler d1 migrations apply bookmark-demo --local
 ```
 
-Build the client, then run the Worker locally:
+Build the client, then start the local Cloudflare Worker development server:
 
 ```sh
 npm run build
-npm run preview
+npm run dev
 ```
 
 ## Scripts
@@ -46,7 +46,7 @@ npm run preview
 - `npm run dev` starts the local Cloudflare Worker development server.
 - `npm run dev:client` starts only the Vite client dev server.
 - `npm run build` type-checks, builds the client, and dry-runs the Worker bundle.
-- `npm run preview` runs the Worker with Wrangler.
+- `npm run preview` also starts the local Cloudflare Worker development server.
 - `npm test` runs unit and UI tests.
 
 ## Initial Scope

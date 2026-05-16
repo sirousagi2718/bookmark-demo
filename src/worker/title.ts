@@ -45,12 +45,16 @@ export const extractTitle = (html: string) => {
 };
 
 export const fetchPageTitle = async (url: string, fetcher: typeof fetch = fetch) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4000);
+
   try {
     // The optional fetcher parameter makes this function easy to unit test.
     const response = await fetcher(url, {
       headers: {
         "user-agent": "bookmark-demo/0.1"
-      }
+      },
+      signal: controller.signal
     });
 
     if (!response.ok) {
@@ -69,5 +73,7 @@ export const fetchPageTitle = async (url: string, fetcher: typeof fetch = fetch)
     // Network failures should not stop bookmark creation. The caller can fall
     // back to using the URL as the title.
     return null;
+  } finally {
+    clearTimeout(timeoutId);
   }
 };
