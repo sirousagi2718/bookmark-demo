@@ -35,10 +35,15 @@ const toBookmark = (row: BookmarkRow): Bookmark => ({
 
 const app = new Hono<{ Bindings: Bindings }>();
 
+// The product requirement is fixed at 10 bookmarks per page.
 const PAGE_SIZE = 10;
 
+// Keep empty or missing optional text fields as an empty string in D1. That makes
+// the API response predictable for the React UI.
 const cleanText = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
+// Tags are entered as one comma-separated string. Store them in a normalized
+// comma+space format so "bookmark,social" and "bookmark, social" display the same.
 const cleanTags = (value: unknown) =>
   cleanText(value)
     .split(",")
@@ -47,6 +52,8 @@ const cleanTags = (value: unknown) =>
     .join(", ");
 
 const getUrlFromPayload = (payload: unknown) => {
+  // JSON can be null, an array, or a primitive value. Check the shape before
+  // reading .url so invalid request bodies return 400 instead of crashing.
   if (
     typeof payload !== "object" ||
     payload === null ||
@@ -59,28 +66,32 @@ const getUrlFromPayload = (payload: unknown) => {
 };
 
 const parseBookmarkId = (value: string) => {
+  // Route params are strings. Convert to a positive integer before using it in SQL.
   const id = Number(value);
   return Number.isInteger(id) && id > 0 ? id : null;
 };
 
 app.get("/api/bookmarks", async (c) => {
   const pageParam = Number(c.req.query("page") ?? "1");
-  const page = Number.isInteger(pageParam) && pageParam > 0 ? pageParam : 1;
-  const offset = (page - 1) * PAGE_SIZE;
+  const requestedPage = Number.isInteger(pageParam) && pageParam > 0 ? pageParam : 1;
 
-  // Prepared statements keep SQL and user data separate. Even though this query
-  // has no user input, using prepare() everywhere keeps the pattern consistent.
-  const [result, count] = await Promise.all([
-    c.env.DB.prepare(
-      "SELECT id, url, title, tags, memo, created_at, updated_at FROM bookmarks ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
-    )
-      .bind(PAGE_SIZE, offset)
-      .all<BookmarkRow>(),
-    c.env.DB.prepare("SELECT COUNT(*) AS total FROM bookmarks").first<{ total: number }>()
-  ]);
-
+  // Count first so we know the real last page. Without this, asking for a page
+  // past the end would calculate an offset that returns an empty list.
+  const count = await c.env.DB.prepare("SELECT COUNT(*) AS total FROM bookmarks").first<{
+    total: number;
+  }>();
   const totalCount = count?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const page = Math.min(requestedPage, totalPages);
+  const offset = (page - 1) * PAGE_SIZE;
+
+  // LIMIT controls how many rows are returned. OFFSET skips rows from earlier
+  // pages, so page 2 starts after the first 10 bookmarks.
+  const result = await c.env.DB.prepare(
+    "SELECT id, url, title, tags, memo, created_at, updated_at FROM bookmarks ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
+  )
+    .bind(PAGE_SIZE, offset)
+    .all<BookmarkRow>();
 
   return c.json({
     bookmarks: result.results.map(toBookmark),
@@ -149,6 +160,8 @@ app.post("/api/bookmarks", async (c) => {
 });
 
 app.put("/api/bookmarks/:id", async (c) => {
+  // Editing updates URL, tags, and memo together. The title is fetched again
+  // because changing the URL may point to a different page.
   const id = parseBookmarkId(c.req.param("id"));
   if (id === null) {
     return c.json({ error: "Bookmark not found." }, 404);
@@ -202,6 +215,8 @@ app.put("/api/bookmarks/:id", async (c) => {
 });
 
 app.delete("/api/bookmarks/:id", async (c) => {
+  // Deletion is intentionally simple: the browser confirms first, then the API
+  // removes the row by id.
   const id = parseBookmarkId(c.req.param("id"));
   if (id === null) {
     return c.json({ error: "Bookmark not found." }, 404);
