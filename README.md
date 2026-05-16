@@ -1,7 +1,8 @@
 # Bookmark Demo
 
-A minimal personal bookmark app for Cloudflare Workers. The first version has no
-authentication and supports URL registration plus a bookmark list.
+A minimal personal bookmark app for Cloudflare Workers. The app has no
+authentication and supports bookmark registration, editing, deletion, and a
+paginated bookmark list.
 
 ## Stack
 
@@ -66,9 +67,13 @@ npm run deploy
 
 ## Initial Scope
 
-Bookmarks are created from a URL only. The Worker fetches the page HTML, extracts
-the `<title>`, and stores the normalized URL plus title in D1. If title fetching
+Bookmarks are created from a URL. The Worker fetches the page HTML, extracts the
+`<title>`, and stores the normalized URL and title in D1. If title fetching
 fails, the bookmark is still saved with the URL as its title.
+
+Saved bookmarks can be edited to update the URL and add comma-separated tags or
+a memo. They can also be deleted. Delete actions ask for browser confirmation
+before removing the bookmark. The list is paginated at 10 bookmarks per page.
 
 R2 is configured as `OGP_BUCKET`, but OGP image fetching and storage are reserved
 for a later iteration.
