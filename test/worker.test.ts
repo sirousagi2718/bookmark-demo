@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import app from "../src/worker";
+import worker, { resetDemoData } from "../src/worker";
 
 type MockStatement = {
   bind: ReturnType<typeof vi.fn>;
@@ -60,7 +60,10 @@ describe("worker bookmarks API", () => {
       selectStatement
     ]);
 
-    const response = await app.fetch(new Request("https://example.com/api/bookmarks?page=99"), env);
+    const response = await worker.fetch(
+      new Request("https://example.com/api/bookmarks?page=99"),
+      env as unknown as Parameters<typeof worker.fetch>[1]
+    );
     const body = await response.json() as BookmarksBody;
 
     expect(response.status).toBe(200);
@@ -101,9 +104,9 @@ describe("worker bookmarks API", () => {
       }
     ]);
 
-    const response = await app.fetch(
+    const response = await worker.fetch(
       new Request("https://example.com/api/bookmarks?page=1&q=bookmark%20social"),
-      env
+      env as unknown as Parameters<typeof worker.fetch>[1]
     );
     const body = await response.json() as BookmarksBody;
 
@@ -131,5 +134,79 @@ describe("worker bookmarks API", () => {
       10,
       0
     );
+  });
+
+  it("clears R2 and seeds D1 during the scheduled reset", async () => {
+    const deleteObjects = vi.fn();
+    const batch = vi.fn();
+    const bind = vi.fn(() => ({}));
+    const prepare = vi.fn(() => ({ bind }));
+    const env = {
+      DB: {
+        prepare,
+        batch
+      },
+      OGP_BUCKET: {
+        list: vi
+          .fn()
+          .mockResolvedValueOnce({
+            objects: [{ key: "ogp/one.png" }, { key: "ogp/two.png" }],
+            truncated: true,
+            cursor: "next-page"
+          })
+          .mockResolvedValueOnce({
+            objects: [{ key: "ogp/three.png" }],
+            truncated: false
+          }),
+        delete: deleteObjects
+      },
+      ASSETS: {
+        fetch: vi.fn()
+      }
+    };
+
+    await resetDemoData(env as unknown as Parameters<typeof resetDemoData>[0]);
+
+    expect(env.OGP_BUCKET.list).toHaveBeenNthCalledWith(1, { cursor: undefined });
+    expect(env.OGP_BUCKET.list).toHaveBeenNthCalledWith(2, { cursor: "next-page" });
+    expect(deleteObjects).toHaveBeenNthCalledWith(1, ["ogp/one.png", "ogp/two.png"]);
+    expect(deleteObjects).toHaveBeenNthCalledWith(2, ["ogp/three.png"]);
+    expect(prepare).toHaveBeenCalledTimes(17);
+    expect(batch).toHaveBeenCalledWith(expect.arrayContaining([expect.any(Object)]));
+  });
+
+  it("only runs the scheduled reset when DEMO is true", async () => {
+    const bind = vi.fn(() => ({}));
+    const env = {
+      DB: {
+        prepare: vi.fn(() => ({ bind })),
+        batch: vi.fn()
+      },
+      OGP_BUCKET: {
+        list: vi.fn(),
+        delete: vi.fn()
+      },
+      ASSETS: {
+        fetch: vi.fn()
+      }
+    };
+
+    await worker.scheduled?.(
+      {} as ScheduledController,
+      env as unknown as Parameters<NonNullable<typeof worker.scheduled>>[1]
+    );
+
+    expect(env.OGP_BUCKET.list).not.toHaveBeenCalled();
+    expect(env.DB.batch).not.toHaveBeenCalled();
+
+    env.OGP_BUCKET.list.mockResolvedValueOnce({ objects: [], truncated: false });
+
+    await worker.scheduled?.(
+      {} as ScheduledController,
+      { ...env, DEMO: "true" } as unknown as Parameters<NonNullable<typeof worker.scheduled>>[1]
+    );
+
+    expect(env.OGP_BUCKET.list).toHaveBeenCalledWith({ cursor: undefined });
+    expect(env.DB.batch).toHaveBeenCalled();
   });
 });

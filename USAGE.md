@@ -155,10 +155,22 @@ Start the local Worker development server:
 npm run dev
 ```
 
+## Hourly Demo Reset
+
+This is a public demo app, so the Worker resets demo data once every hour using
+the cron trigger in `wrangler.toml`. The reset only runs when `DEMO=true` is set.
+
+On each scheduled run, the Worker:
+
+- Deletes every object in the configured R2 bucket.
+- Deletes all rows from the D1 `bookmarks` table.
+- Inserts the 15 demo bookmarks from `src/worker/seed-bookmarks.json`.
+
 ## Notes for Beginners
 
 - `src/client` contains the React browser UI.
 - `src/worker` contains the Cloudflare Worker API.
+- `src/worker/seed-bookmarks.json` contains the demo bookmarks restored hourly.
 - `src/shared` contains TypeScript types used by both client and Worker code.
 - `migrations` contains SQL files for D1.
 - `wrangler.toml` connects the code to Cloudflare bindings like D1, R2, and

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Bookmark, CreateBookmarkRequest, UpdateBookmarkRequest } from "../shared/bookmarks";
+import seedBookmarks from "./seed-bookmarks.json";
 import { fetchPageTitle, normalizeUrl } from "./title";
 
 type Bindings = {
@@ -9,6 +10,8 @@ type Bindings = {
   OGP_BUCKET: R2Bucket;
   // ASSETS lets the Worker serve the built React app from dist/client.
   ASSETS: Fetcher;
+  // Set DEMO=true to enable the hourly data reset for public demo deployments.
+  DEMO?: string;
 };
 
 type BookmarkRow = {
@@ -105,6 +108,60 @@ const buildSearchFilter = (terms: string[]) => {
     sql: `WHERE ${sql}`,
     bindings
   };
+};
+
+type SeedBookmark = {
+  url: string;
+  title: string;
+  tags: string;
+  memo: string;
+};
+
+const seedBookmarkRows = seedBookmarks satisfies SeedBookmark[];
+
+export const deleteAllR2Objects = async (bucket: R2Bucket) => {
+  let cursor: string | undefined;
+
+  do {
+    // R2 list() returns one page at a time. Keep asking for the next cursor until
+    // every object has been seen.
+    const page = await bucket.list({ cursor });
+    const keys = page.objects.map((object) => object.key);
+
+    if (keys.length > 0) {
+      // delete() accepts an array, so one call can remove the whole listed page.
+      await bucket.delete(keys);
+    }
+
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+};
+
+export const resetBookmarks = async (db: D1Database) => {
+  const now = new Date().toISOString();
+  const statements = [
+    // Start from a blank table so the demo always returns to the same state.
+    db.prepare("DELETE FROM bookmarks"),
+    // Reset the AUTOINCREMENT counter. This keeps demo IDs predictable after
+    // each hourly reset.
+    db.prepare("DELETE FROM sqlite_sequence WHERE name = ?").bind("bookmarks"),
+    ...seedBookmarkRows.map((bookmark) =>
+      db
+        .prepare(
+          "INSERT INTO bookmarks (url, title, tags, memo, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+        )
+        .bind(bookmark.url, bookmark.title, cleanTags(bookmark.tags), cleanText(bookmark.memo), now, now)
+    )
+  ];
+
+  // batch() sends the reset statements together. For a tiny demo seed set this
+  // is simpler than managing a transaction by hand.
+  await db.batch(statements);
+};
+
+export const resetDemoData = async (env: Bindings) => {
+  await deleteAllR2Objects(env.OGP_BUCKET);
+  await resetBookmarks(env.DB);
 };
 
 app.get("/api/bookmarks", async (c) => {
@@ -273,4 +330,15 @@ app.delete("/api/bookmarks/:id", async (c) => {
 // the Worker serve both the backend API and frontend from the same deployment.
 app.notFound((c) => c.env.ASSETS.fetch(c.req.raw));
 
-export default app;
+export default {
+  fetch: (request: Request, env: Bindings, ctx?: ExecutionContext) => app.fetch(request, env, ctx),
+  scheduled: async (_event, env) => {
+    if (env.DEMO !== "true") {
+      return;
+    }
+
+    // Wrangler runs this from the cron trigger in wrangler.toml. It keeps the
+    // public demo clean by removing uploaded R2 objects and restoring D1 rows.
+    await resetDemoData(env);
+  }
+} satisfies ExportedHandler<Bindings>;

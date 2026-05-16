@@ -2,6 +2,12 @@ name = "bookmark-demo"
 main = "src/worker/index.ts"
 compatibility_date = "2026-05-16"
 
+[vars]
+DEMO = "true"
+
+[triggers]
+crons = ["0 * * * *"]
+
 [assets]
 directory = "./dist/client"
 binding = "ASSETS"

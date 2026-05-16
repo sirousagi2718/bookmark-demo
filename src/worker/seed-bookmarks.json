@@ -1,0 +1,92 @@
+[
+  {
+    "url": "https://developers.cloudflare.com/workers/",
+    "title": "Cloudflare Workers Documentation",
+    "tags": "cloudflare, workers, docs",
+    "memo": "Main reference for the runtime used by this demo app."
+  },
+  {
+    "url": "https://developers.cloudflare.com/d1/",
+    "title": "Cloudflare D1 Documentation",
+    "tags": "cloudflare, d1, database",
+    "memo": "Useful when explaining how bookmark rows are stored."
+  },
+  {
+    "url": "https://developers.cloudflare.com/r2/",
+    "title": "Cloudflare R2 Documentation",
+    "tags": "cloudflare, r2, storage",
+    "memo": "Included for the future OGP image storage feature."
+  },
+  {
+    "url": "https://hono.dev/",
+    "title": "Hono",
+    "tags": "hono, api, framework",
+    "memo": "Small web framework used for the Worker API routes."
+  },
+  {
+    "url": "https://vite.dev/",
+    "title": "Vite",
+    "tags": "vite, frontend, build",
+    "memo": "Frontend build tool for the React client."
+  },
+  {
+    "url": "https://react.dev/",
+    "title": "React",
+    "tags": "react, frontend, ui",
+    "memo": "UI library used by the bookmark app."
+  },
+  {
+    "url": "https://www.typescriptlang.org/docs/",
+    "title": "TypeScript Documentation",
+    "tags": "typescript, docs, language",
+    "memo": "Reference for the shared client and Worker types."
+  },
+  {
+    "url": "https://vitest.dev/",
+    "title": "Vitest",
+    "tags": "testing, vitest, frontend",
+    "memo": "Test runner used for the app and Worker unit tests."
+  },
+  {
+    "url": "https://testing-library.com/docs/react-testing-library/intro/",
+    "title": "React Testing Library",
+    "tags": "testing, react, ui",
+    "memo": "Helpful examples for testing user-facing UI behavior."
+  },
+  {
+    "url": "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API",
+    "title": "Fetch API",
+    "tags": "web, fetch, api",
+    "memo": "Reference for browser and Worker fetch calls."
+  },
+  {
+    "url": "https://developer.mozilla.org/en-US/docs/Web/API/History_API",
+    "title": "History API",
+    "tags": "web, history, url",
+    "memo": "Used by the search feature to keep query state in the URL."
+  },
+  {
+    "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Element/dialog",
+    "title": "HTML dialog element",
+    "tags": "html, dialog, ui",
+    "memo": "Background reading for confirmation and dialog patterns."
+  },
+  {
+    "url": "https://www.sqlite.org/lang_select.html",
+    "title": "SQLite SELECT",
+    "tags": "sqlite, sql, database",
+    "memo": "Useful for understanding D1 SELECT, LIMIT, and OFFSET queries."
+  },
+  {
+    "url": "https://www.sqlite.org/lang_expr.html#like",
+    "title": "SQLite LIKE operator",
+    "tags": "sqlite, search, like",
+    "memo": "Reference for the demo app's LIKE-based search."
+  },
+  {
+    "url": "https://github.com/cloudflare/workers-sdk",
+    "title": "Cloudflare Workers SDK",
+    "tags": "cloudflare, wrangler, github",
+    "memo": "Source repository for Wrangler and the Workers tooling."
+  }
+]
