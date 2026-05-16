@@ -1,0 +1,172 @@
+:root {
+  color: #1f2933;
+  background: #f6f7f9;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.app-shell {
+  width: min(960px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 40px 0;
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(320px, 520px);
+  gap: 24px;
+  align-items: end;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #d7dde5;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  line-height: 1;
+}
+
+.bookmark-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.bookmark-form input {
+  min-width: 0;
+  height: 44px;
+  padding: 0 14px;
+  color: #111827;
+  background: #ffffff;
+  border: 1px solid #c6ced8;
+  border-radius: 6px;
+  outline: none;
+}
+
+.bookmark-form input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 16%);
+}
+
+.bookmark-form button {
+  height: 44px;
+  padding: 0 18px;
+  color: #ffffff;
+  background: #1e40af;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.bookmark-form button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.bookmark-list {
+  display: grid;
+  gap: 10px;
+  padding: 24px 0;
+}
+
+.bookmark-item {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #d7dde5;
+  border-radius: 8px;
+}
+
+.bookmark-item a {
+  overflow-wrap: anywhere;
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.bookmark-item a:hover {
+  text-decoration: underline;
+}
+
+.bookmark-item span {
+  overflow-wrap: anywhere;
+  color: #526170;
+  font-size: 0.9rem;
+}
+
+.status,
+.empty-state {
+  padding: 16px;
+  color: #526170;
+  background: #ffffff;
+  border: 1px solid #d7dde5;
+  border-radius: 8px;
+}
+
+.status-error {
+  margin-top: 18px;
+  color: #8a1f11;
+  background: #fff4f1;
+  border-color: #f2b8ae;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    width: min(100vw - 24px, 960px);
+    padding: 24px 0;
+  }
+
+  .toolbar {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .bookmark-form {
+    grid-template-columns: 1fr;
+  }
+
+  .bookmark-form button {
+    width: 100%;
+  }
+}

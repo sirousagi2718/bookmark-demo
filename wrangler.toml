@@ -1,0 +1,18 @@
+name = "bookmark-demo"
+main = "src/worker/index.ts"
+compatibility_date = "2026-05-16"
+
+[assets]
+directory = "./dist/client"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "bookmark-demo"
+database_id = "replace-with-d1-database-id"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "OGP_BUCKET"
+bucket_name = "bookmark-demo-ogp"
