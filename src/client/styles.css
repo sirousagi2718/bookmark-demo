@@ -59,8 +59,16 @@ h1 {
   gap: 10px;
 }
 
+.search-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  padding-top: 18px;
+}
+
 .bookmark-form input,
 .bookmark-form textarea,
+.search-form input,
 .edit-form input,
 .edit-form textarea {
   min-width: 0;
@@ -73,6 +81,7 @@ h1 {
 }
 
 .bookmark-form input,
+.search-form input,
 .edit-form input {
   height: 44px;
 }
@@ -86,6 +95,7 @@ h1 {
 
 .bookmark-form input:focus,
 .bookmark-form textarea:focus,
+.search-form input:focus,
 .edit-form input:focus,
 .edit-form textarea:focus {
   border-color: #2563eb;
@@ -93,6 +103,7 @@ h1 {
 }
 
 .bookmark-form button,
+.search-form button,
 .item-actions button,
 .pagination button {
   height: 44px;
@@ -106,10 +117,16 @@ h1 {
 }
 
 .bookmark-form button:disabled,
+.search-form button:disabled,
 .item-actions button:disabled,
 .pagination button:disabled {
   cursor: wait;
   opacity: 0.72;
+}
+
+.search-form .secondary-button {
+  color: #1f2933;
+  background: #e5eaf0;
 }
 
 .bookmark-list {
@@ -307,6 +324,10 @@ h1 {
   }
 
   .bookmark-form {
+    grid-template-columns: 1fr;
+  }
+
+  .search-form {
     grid-template-columns: 1fr;
   }
 

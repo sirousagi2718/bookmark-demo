@@ -2,7 +2,7 @@
 
 A minimal personal bookmark app for Cloudflare Workers. The app has no
 authentication and supports bookmark registration, editing, deletion, and a
-paginated bookmark list.
+searchable, paginated bookmark list.
 
 ## Stack
 
@@ -74,6 +74,8 @@ fails, the bookmark is still saved with the URL as its title.
 Saved bookmarks can be edited to update the URL and add comma-separated tags or
 a memo. They can also be deleted. Delete actions ask for browser confirmation
 before removing the bookmark. The list is paginated at 10 bookmarks per page.
+Search terms are split by spaces and matched as OR conditions against URL, title,
+tags, and memo with SQL `LIKE`.
 
 R2 is configured as `OGP_BUCKET`, but OGP image fetching and storage are reserved
 for a later iteration.

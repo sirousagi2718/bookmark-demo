@@ -12,6 +12,7 @@ In the initial version, you can:
 - Add a bookmark by entering a URL.
 - Edit a saved bookmark's URL, tags, and memo.
 - Delete a saved bookmark after a confirmation dialog.
+- Search bookmarks by URL, title, tags, or memo.
 - See saved bookmarks in a newest-first paginated list.
 - Store bookmark data in Cloudflare D1.
 
@@ -99,6 +100,10 @@ http://localhost:8787
 Each page shows up to 10 bookmarks. Use `Previous` and `Next` to move through
 pages.
 
+Use the search box to filter bookmarks. Multiple words are split by spaces and
+matched as OR search terms, so `cloudflare hono` returns bookmarks containing
+either `cloudflare` or `hono` in the URL, title, tags, or memo.
+
 To add tags or a memo, click `Edit`, update the fields, and click `Save`. To
 remove a bookmark, click `Delete` and confirm the browser dialog.
 
@@ -110,7 +115,7 @@ used as the title.
 List bookmarks:
 
 ```sh
-curl "http://localhost:8787/api/bookmarks?page=1"
+curl "http://localhost:8787/api/bookmarks?page=1&q=bookmark%20social"
 ```
 
 Create a bookmark:
