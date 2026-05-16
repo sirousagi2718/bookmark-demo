@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/client/App";
@@ -194,6 +194,57 @@ describe("App", () => {
     expect(window.location.search).toBe("?page=2&q=bookmark+social");
   });
 
+  it("keeps the URL in sync after creating while search is active", async () => {
+    mockFetch
+      .mockResolvedValueOnce(bookmarksResponse([]))
+      .mockResolvedValueOnce(
+        bookmarksResponse([makeBookmark({ title: "Search result" })], {
+          page: 1,
+          totalCount: 1,
+          totalPages: 1
+        })
+      )
+      .mockResolvedValueOnce(Response.json({ bookmark: makeBookmark({ id: 2 }) }, { status: 201 }))
+      .mockResolvedValueOnce(bookmarksResponse([makeBookmark({ id: 2 })]));
+
+    render(<App />);
+
+    await screen.findByText("No bookmarks yet.");
+    await userEvent.type(screen.getByLabelText("Search bookmarks"), "docs");
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+    await screen.findByRole("link", { name: "Search result" });
+    await userEvent.type(screen.getByLabelText("URL"), "https://example.com");
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenLastCalledWith("/api/bookmarks?page=1&q=docs");
+    });
+    expect(window.location.search).toBe("?q=docs");
+  });
+
+  it("keeps the URL in sync after deleting the last bookmark on a page", async () => {
+    vi.spyOn(window, "confirm").mockReturnValueOnce(true);
+    window.history.replaceState(null, "", "/?page=2&q=docs");
+    mockFetch
+      .mockResolvedValueOnce(
+        bookmarksResponse([makeBookmark()], { page: 2, totalCount: 11, totalPages: 2 })
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        bookmarksResponse([makeBookmark({ id: 2 })], { page: 1, totalCount: 10, totalPages: 1 })
+      );
+
+    render(<App />);
+
+    await screen.findByRole("link", { name: "Example" });
+    await userEvent.click(screen.getByRole("button", { name: "Delete Example" }));
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenLastCalledWith("/api/bookmarks?page=1&q=docs");
+    });
+    expect(window.location.search).toBe("?q=docs");
+  });
+
   it("loads the initial search state from the URL", async () => {
     window.history.replaceState(null, "", "/?page=2&q=docs");
     mockFetch.mockResolvedValueOnce(
@@ -209,5 +260,23 @@ describe("App", () => {
     expect(await screen.findByRole("link", { name: "URL state result" })).toBeInTheDocument();
     expect(screen.getByLabelText("Search bookmarks")).toHaveValue("docs");
     expect(mockFetch).toHaveBeenLastCalledWith("/api/bookmarks?page=2&q=docs");
+  });
+
+  it("reloads bookmarks when browser history changes", async () => {
+    mockFetch
+      .mockResolvedValueOnce(bookmarksResponse([]))
+      .mockResolvedValueOnce(bookmarksResponse([makeBookmark({ title: "History result" })]));
+
+    render(<App />);
+
+    await screen.findByText("No bookmarks yet.");
+    act(() => {
+      window.history.pushState(null, "", "/?q=history");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    expect(await screen.findByRole("link", { name: "History result" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Search bookmarks")).toHaveValue("history");
+    expect(mockFetch).toHaveBeenLastCalledWith("/api/bookmarks?page=1&q=history");
   });
 });

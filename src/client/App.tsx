@@ -118,11 +118,25 @@ export function App() {
   }, [page, query]);
 
   useEffect(() => {
+    const syncFromUrl = () => {
+      const nextState = readUrlState();
+      setSearchInput(nextState.query);
+      setQuery(nextState.query);
+      // Back/forward navigation should show the same data as the URL.
+      void loadBookmarks(nextState.page, nextState.query);
+    };
+
     const initialState = readUrlState();
     setSearchInput(initialState.query);
     setQuery(initialState.query);
     // useEffect cannot be async directly, so we start the async function here.
     void loadBookmarks(initialState.page, initialState.query);
+
+    window.addEventListener("popstate", syncFromUrl);
+
+    return () => {
+      window.removeEventListener("popstate", syncFromUrl);
+    };
   }, []);
 
   const updateForm = (field: keyof FormState, value: string) => {
@@ -157,6 +171,7 @@ export function App() {
       await response.json() as CreateBookmarkResponse;
       setForm(emptyForm);
       setEditingId(null);
+      pushUrlState(1, query);
       await loadBookmarks(1, query);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Failed to save bookmark.");
@@ -227,6 +242,7 @@ export function App() {
 
       setEditingId(null);
       const targetPage = bookmarks.length === 1 && page > 1 ? page - 1 : page;
+      pushUrlState(targetPage, query);
       await loadBookmarks(targetPage, query);
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Failed to delete bookmark.");

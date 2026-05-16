@@ -94,8 +94,7 @@ describe("worker bookmarks API", () => {
     }));
     const env = makeEnv([
       {
-        bind: countBind,
-        first: vi.fn(async () => ({ total: 21 }))
+        bind: countBind
       },
       {
         bind: selectBind
