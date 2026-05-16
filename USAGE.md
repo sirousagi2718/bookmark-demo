@@ -129,6 +129,13 @@ Build and dry-run the Worker bundle:
 npm run build
 ```
 
+Deploy the Worker to Cloudflare:
+
+```sh
+npx wrangler d1 migrations apply bookmark-demo --remote
+npm run deploy
+```
+
 Start the local Worker development server:
 
 ```sh
