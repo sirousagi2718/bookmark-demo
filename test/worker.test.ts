@@ -136,6 +136,100 @@ describe("worker bookmarks API", () => {
     );
   });
 
+  it("stores the OGP image path when creating a bookmark", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://example.org/") {
+        return new Response(
+          '<title>Example</title><meta property="og:image" content="https://cdn.example.org/x.png">',
+          { headers: { "content-type": "text/html" } }
+        );
+      }
+      return new Response(new Uint8Array([1, 2, 3]), {
+        headers: { "content-type": "image/png" }
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const put = vi.fn(async () => undefined);
+    const insertBind = vi.fn(() => ({
+      first: vi.fn(async () => ({
+        id: 5,
+        url: "https://example.org/",
+        title: "Example",
+        tags: "",
+        memo: "",
+        ogp_image_url: "/ogp/stored.png",
+        created_at: "t",
+        updated_at: "t"
+      }))
+    }));
+    const env = {
+      DB: { prepare: vi.fn(() => ({ bind: insertBind })) },
+      OGP_BUCKET: { put },
+      ASSETS: { fetch: vi.fn() }
+    };
+
+    const response = await worker.fetch(
+      new Request("https://example.com/api/bookmarks", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: "https://example.org" })
+      }),
+      env as unknown as Parameters<typeof worker.fetch>[1]
+    );
+    const body = (await response.json()) as { bookmark: { ogpImageUrl: string } };
+
+    expect(response.status).toBe(201);
+    expect(put).toHaveBeenCalledTimes(1);
+    const bindArgs = insertBind.mock.calls[0] as unknown[];
+    expect(bindArgs.some((arg) => typeof arg === "string" && arg.startsWith("/ogp/"))).toBe(true);
+    expect(body.bookmark.ogpImageUrl).toBe("/ogp/stored.png");
+
+    vi.unstubAllGlobals();
+  });
+
+  it("serves OGP images stored in R2", async () => {
+    const writeHttpMetadata = vi.fn((headers: Headers) => headers.set("content-type", "image/png"));
+    const env = {
+      DB: { prepare: vi.fn() },
+      OGP_BUCKET: {
+        get: vi.fn(async () => ({
+          body: "binary-image-data",
+          httpEtag: '"etag-123"',
+          writeHttpMetadata
+        }))
+      },
+      ASSETS: { fetch: vi.fn() }
+    };
+
+    const response = await worker.fetch(
+      new Request("https://example.com/ogp/abc.png"),
+      env as unknown as Parameters<typeof worker.fetch>[1]
+    );
+
+    expect(env.OGP_BUCKET.get).toHaveBeenCalledWith("ogp/abc.png");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("image/png");
+    expect(response.headers.get("etag")).toBe('"etag-123"');
+    expect(response.headers.get("cache-control")).toContain("max-age=86400");
+  });
+
+  it("returns 404 when the OGP image is missing", async () => {
+    const env = {
+      DB: { prepare: vi.fn() },
+      OGP_BUCKET: { get: vi.fn(async () => null) },
+      ASSETS: { fetch: vi.fn() }
+    };
+
+    const response = await worker.fetch(
+      new Request("https://example.com/ogp/missing.png"),
+      env as unknown as Parameters<typeof worker.fetch>[1]
+    );
+
+    expect(response.status).toBe(404);
+  });
+
   it("clears R2 and seeds D1 during the scheduled reset", async () => {
     const deleteObjects = vi.fn();
     const batch = vi.fn();

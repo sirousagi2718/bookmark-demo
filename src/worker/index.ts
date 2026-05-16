@@ -1,12 +1,13 @@
 import { Hono } from "hono";
 import type { Bookmark, CreateBookmarkRequest, UpdateBookmarkRequest } from "../shared/bookmarks";
 import seedBookmarks from "./seed-bookmarks.json";
+import { storeOgpImage } from "./ogp";
 import { fetchPageTitle, normalizeUrl } from "./title";
 
 type Bindings = {
   // These names must match the bindings in wrangler.toml.
   DB: D1Database;
-  // R2 is not used yet, but the binding is ready for future OGP image storage.
+  // Stores OGP thumbnail images fetched when a bookmark is created or updated.
   OGP_BUCKET: R2Bucket;
   // ASSETS lets the Worker serve the built React app from dist/client.
   ASSETS: Fetcher;
@@ -20,6 +21,7 @@ type BookmarkRow = {
   title: string;
   tags: string;
   memo: string;
+  ogp_image_url: string;
   created_at: string;
   updated_at: string;
 };
@@ -32,6 +34,8 @@ const toBookmark = (row: BookmarkRow): Bookmark => ({
   title: row.title,
   tags: row.tags,
   memo: row.memo,
+  // Older rows (and the seed data) have no thumbnail; default to "".
+  ogpImageUrl: row.ogp_image_url ?? "",
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
@@ -183,7 +187,7 @@ app.get("/api/bookmarks", async (c) => {
   // LIMIT controls how many rows are returned. OFFSET skips rows from earlier
   // pages, so page 2 starts after the first 10 bookmarks.
   const result = await c.env.DB.prepare(
-    `SELECT id, url, title, tags, memo, created_at, updated_at FROM bookmarks ${searchFilter.sql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`
+    `SELECT id, url, title, tags, memo, ogp_image_url, created_at, updated_at FROM bookmarks ${searchFilter.sql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`
   )
     .bind(...searchFilter.bindings, PAGE_SIZE, offset)
     .all<BookmarkRow>();
@@ -226,15 +230,18 @@ app.post("/api/bookmarks", async (c) => {
   // Title fetching is helpful but not required. If the target site is down,
   // blocks requests, or has no <title>, we still save the bookmark.
   const title = (await fetchPageTitle(url)) ?? url;
+  // Fetching the OGP image is best-effort: storeOgpImage returns "" when the
+  // page has no og:image or the image cannot be fetched, so saving still works.
+  const ogpImageUrl = await storeOgpImage(url, c.env.OGP_BUCKET);
   const now = new Date().toISOString();
 
   try {
     // RETURNING gives us the inserted row in one round trip, so the UI can update
     // immediately without making a second GET request.
     const result = await c.env.DB.prepare(
-      "INSERT INTO bookmarks (url, title, tags, memo, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id, url, title, tags, memo, created_at, updated_at"
+      "INSERT INTO bookmarks (url, title, tags, memo, ogp_image_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, url, title, tags, memo, ogp_image_url, created_at, updated_at"
     )
-      .bind(url, title, tags, memo, now, now)
+      .bind(url, title, tags, memo, ogpImageUrl, now, now)
       .first<BookmarkRow>();
 
     if (!result) {
@@ -285,13 +292,15 @@ app.put("/api/bookmarks/:id", async (c) => {
   const tags = cleanTags((payload as UpdateBookmarkRequest).tags);
   const memo = cleanText((payload as UpdateBookmarkRequest).memo);
   const title = (await fetchPageTitle(url)) ?? url;
+  // The URL may now point to a different page, so refresh the thumbnail too.
+  const ogpImageUrl = await storeOgpImage(url, c.env.OGP_BUCKET);
   const now = new Date().toISOString();
 
   try {
     const result = await c.env.DB.prepare(
-      "UPDATE bookmarks SET url = ?, title = ?, tags = ?, memo = ?, updated_at = ? WHERE id = ? RETURNING id, url, title, tags, memo, created_at, updated_at"
+      "UPDATE bookmarks SET url = ?, title = ?, tags = ?, memo = ?, ogp_image_url = ?, updated_at = ? WHERE id = ? RETURNING id, url, title, tags, memo, ogp_image_url, created_at, updated_at"
     )
-      .bind(url, title, tags, memo, now, id)
+      .bind(url, title, tags, memo, ogpImageUrl, now, id)
       .first<BookmarkRow>();
 
     if (!result) {
@@ -324,6 +333,27 @@ app.delete("/api/bookmarks/:id", async (c) => {
   }
 
   return c.body(null, 204);
+});
+
+app.get("/ogp/:name", async (c) => {
+  // The R2 bucket is private, so thumbnails are streamed back through the
+  // Worker. Stored paths look like "/ogp/<uuid>.png"; the object key is the
+  // same minus the leading slash.
+  const name = c.req.param("name");
+  const object = await c.env.OGP_BUCKET.get(`ogp/${name}`);
+
+  if (!object) {
+    return c.json({ error: "Image not found." }, 404);
+  }
+
+  const headers = new Headers();
+  // writeHttpMetadata copies the stored content-type back onto the response.
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  // Thumbnails never change for a given key, so they are safe to cache hard.
+  headers.set("cache-control", "public, max-age=86400, immutable");
+
+  return new Response(object.body, { headers });
 });
 
 // Any non-API request falls through to the static React app. This is what makes
