@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { Bookmark, CreateBookmarkRequest } from "../shared/bookmarks";
+import type { Bookmark, CreateBookmarkRequest, UpdateBookmarkRequest } from "../shared/bookmarks";
 import { fetchPageTitle, normalizeUrl } from "./title";
 
 type Bindings = {
@@ -15,6 +15,8 @@ type BookmarkRow = {
   id: number;
   url: string;
   title: string;
+  tags: string;
+  memo: string;
   created_at: string;
   updated_at: string;
 };
@@ -25,20 +27,79 @@ const toBookmark = (row: BookmarkRow): Bookmark => ({
   id: row.id,
   url: row.url,
   title: row.title,
+  tags: row.tags,
+  memo: row.memo,
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-app.get("/api/bookmarks", async (c) => {
-  // Prepared statements keep SQL and user data separate. Even though this query
-  // has no user input, using prepare() everywhere keeps the pattern consistent.
-  const result = await c.env.DB.prepare(
-    "SELECT id, url, title, created_at, updated_at FROM bookmarks ORDER BY created_at DESC, id DESC"
-  ).all<BookmarkRow>();
+// The product requirement is fixed at 10 bookmarks per page.
+const PAGE_SIZE = 10;
 
-  return c.json({ bookmarks: result.results.map(toBookmark) });
+// Keep empty or missing optional text fields as an empty string in D1. That makes
+// the API response predictable for the React UI.
+const cleanText = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+
+// Tags are entered as one comma-separated string. Store them in a normalized
+// comma+space format so "bookmark,social" and "bookmark, social" display the same.
+const cleanTags = (value: unknown) =>
+  cleanText(value)
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .join(", ");
+
+const getUrlFromPayload = (payload: unknown) => {
+  // JSON can be null, an array, or a primitive value. Check the shape before
+  // reading .url so invalid request bodies return 400 instead of crashing.
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    typeof (payload as CreateBookmarkRequest | UpdateBookmarkRequest).url !== "string"
+  ) {
+    return null;
+  }
+
+  return (payload as CreateBookmarkRequest | UpdateBookmarkRequest).url;
+};
+
+const parseBookmarkId = (value: string) => {
+  // Route params are strings. Convert to a positive integer before using it in SQL.
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+
+app.get("/api/bookmarks", async (c) => {
+  const pageParam = Number(c.req.query("page") ?? "1");
+  const requestedPage = Number.isInteger(pageParam) && pageParam > 0 ? pageParam : 1;
+
+  // Count first so we know the real last page. Without this, asking for a page
+  // past the end would calculate an offset that returns an empty list.
+  const count = await c.env.DB.prepare("SELECT COUNT(*) AS total FROM bookmarks").first<{
+    total: number;
+  }>();
+  const totalCount = count?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const page = Math.min(requestedPage, totalPages);
+  const offset = (page - 1) * PAGE_SIZE;
+
+  // LIMIT controls how many rows are returned. OFFSET skips rows from earlier
+  // pages, so page 2 starts after the first 10 bookmarks.
+  const result = await c.env.DB.prepare(
+    "SELECT id, url, title, tags, memo, created_at, updated_at FROM bookmarks ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
+  )
+    .bind(PAGE_SIZE, offset)
+    .all<BookmarkRow>();
+
+  return c.json({
+    bookmarks: result.results.map(toBookmark),
+    page,
+    pageSize: PAGE_SIZE,
+    totalCount,
+    totalPages
+  });
 });
 
 app.post("/api/bookmarks", async (c) => {
@@ -51,11 +112,8 @@ app.post("/api/bookmarks", async (c) => {
     return c.json({ error: "Request body must be valid JSON." }, 400);
   }
 
-  if (
-    typeof payload !== "object" ||
-    payload === null ||
-    typeof (payload as CreateBookmarkRequest).url !== "string"
-  ) {
+  const payloadUrl = getUrlFromPayload(payload);
+  if (payloadUrl === null) {
     return c.json({ error: "URL is required." }, 400);
   }
 
@@ -63,11 +121,13 @@ app.post("/api/bookmarks", async (c) => {
   try {
     // Normalize before saving so small differences like fragments do not create
     // duplicate-looking bookmarks.
-    url = normalizeUrl((payload as CreateBookmarkRequest).url);
+    url = normalizeUrl(payloadUrl);
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "Invalid URL." }, 400);
   }
 
+  const tags = cleanTags((payload as CreateBookmarkRequest).tags);
+  const memo = cleanText((payload as CreateBookmarkRequest).memo);
   // Title fetching is helpful but not required. If the target site is down,
   // blocks requests, or has no <title>, we still save the bookmark.
   const title = (await fetchPageTitle(url)) ?? url;
@@ -77,9 +137,9 @@ app.post("/api/bookmarks", async (c) => {
     // RETURNING gives us the inserted row in one round trip, so the UI can update
     // immediately without making a second GET request.
     const result = await c.env.DB.prepare(
-      "INSERT INTO bookmarks (url, title, created_at, updated_at) VALUES (?, ?, ?, ?) RETURNING id, url, title, created_at, updated_at"
+      "INSERT INTO bookmarks (url, title, tags, memo, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id, url, title, tags, memo, created_at, updated_at"
     )
-      .bind(url, title, now, now)
+      .bind(url, title, tags, memo, now, now)
       .first<BookmarkRow>();
 
     if (!result) {
@@ -97,6 +157,78 @@ app.post("/api/bookmarks", async (c) => {
 
     return c.json({ error: "Failed to create bookmark." }, 500);
   }
+});
+
+app.put("/api/bookmarks/:id", async (c) => {
+  // Editing updates URL, tags, and memo together. The title is fetched again
+  // because changing the URL may point to a different page.
+  const id = parseBookmarkId(c.req.param("id"));
+  if (id === null) {
+    return c.json({ error: "Bookmark not found." }, 404);
+  }
+
+  let payload: unknown;
+
+  try {
+    payload = await c.req.json();
+  } catch {
+    return c.json({ error: "Request body must be valid JSON." }, 400);
+  }
+
+  const payloadUrl = getUrlFromPayload(payload);
+  if (payloadUrl === null) {
+    return c.json({ error: "URL is required." }, 400);
+  }
+
+  let url: string;
+  try {
+    url = normalizeUrl(payloadUrl);
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Invalid URL." }, 400);
+  }
+
+  const tags = cleanTags((payload as UpdateBookmarkRequest).tags);
+  const memo = cleanText((payload as UpdateBookmarkRequest).memo);
+  const title = (await fetchPageTitle(url)) ?? url;
+  const now = new Date().toISOString();
+
+  try {
+    const result = await c.env.DB.prepare(
+      "UPDATE bookmarks SET url = ?, title = ?, tags = ?, memo = ?, updated_at = ? WHERE id = ? RETURNING id, url, title, tags, memo, created_at, updated_at"
+    )
+      .bind(url, title, tags, memo, now, id)
+      .first<BookmarkRow>();
+
+    if (!result) {
+      return c.json({ error: "Bookmark not found." }, 404);
+    }
+
+    return c.json({ bookmark: toBookmark(result) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.toLowerCase().includes("unique")) {
+      return c.json({ error: "This URL is already bookmarked." }, 409);
+    }
+
+    return c.json({ error: "Failed to update bookmark." }, 500);
+  }
+});
+
+app.delete("/api/bookmarks/:id", async (c) => {
+  // Deletion is intentionally simple: the browser confirms first, then the API
+  // removes the row by id.
+  const id = parseBookmarkId(c.req.param("id"));
+  if (id === null) {
+    return c.json({ error: "Bookmark not found." }, 404);
+  }
+
+  const result = await c.env.DB.prepare("DELETE FROM bookmarks WHERE id = ?").bind(id).run();
+
+  if (result.meta.changes === 0) {
+    return c.json({ error: "Bookmark not found." }, 404);
+  }
+
+  return c.body(null, 204);
 });
 
 // Any non-API request falls through to the static React app. This is what makes

@@ -10,7 +10,9 @@ Workers.
 In the initial version, you can:
 
 - Add a bookmark by entering a URL.
-- See saved bookmarks in a newest-first list.
+- Edit a saved bookmark's URL, tags, and memo.
+- Delete a saved bookmark after a confirmation dialog.
+- See saved bookmarks in a newest-first paginated list.
 - Store bookmark data in Cloudflare D1.
 
 The app also has an R2 binding named `OGP_BUCKET`, but OGP image storage is not
@@ -92,7 +94,13 @@ http://localhost:8787
 2. Enter a URL such as `https://example.com`.
 3. Click `Add`.
 4. The Worker fetches the page HTML and tries to read its `<title>`.
-5. The bookmark is saved in D1 and appears at the top of the list.
+5. The bookmark is saved in D1 and appears in the list.
+
+Each page shows up to 10 bookmarks. Use `Previous` and `Next` to move through
+pages.
+
+To add tags or a memo, click `Edit`, update the fields, and click `Save`. To
+remove a bookmark, click `Delete` and confirm the browser dialog.
 
 If title fetching fails, the bookmark is still saved. In that case, the URL is
 used as the title.
@@ -102,7 +110,7 @@ used as the title.
 List bookmarks:
 
 ```sh
-curl http://localhost:8787/api/bookmarks
+curl "http://localhost:8787/api/bookmarks?page=1"
 ```
 
 Create a bookmark:
