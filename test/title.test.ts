@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { extractTitle, fetchPageTitle, normalizeUrl } from "../src/worker/title";
+import { extractTitle, fetchPageTitle, normalizeUrl } from "../src/server/title";
 
 describe("normalizeUrl", () => {
   it("normalizes http and https URLs and removes fragments", () => {

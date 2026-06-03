@@ -95,11 +95,11 @@ export function App() {
       const params = new URLSearchParams({ page: String(targetPage) });
       const trimmedQuery = targetQuery.trim();
       if (trimmedQuery) {
-        // The Worker splits this value by spaces and OR-searches each word.
+        // The API splits this value by spaces and OR-searches each word.
         params.set("q", trimmedQuery);
       }
 
-      // Relative URLs call the same Worker that serves this React app.
+      // Relative URLs call the same API origin in production.
       const response = await fetch(`/api/bookmarks?${params.toString()}`);
       if (!response.ok) {
         throw new Error(await readError(response));

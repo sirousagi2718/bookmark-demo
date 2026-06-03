@@ -1,16 +1,18 @@
 # Bookmark Demo
 
-A minimal personal bookmark app for Cloudflare Workers. The app has no
-authentication and supports bookmark registration, editing, deletion, and a
-searchable, paginated bookmark list.
+A minimal personal bookmark app that runs locally with a Node/Hono API, a React
++ Vite client, a SQLite database file, and local OGP image storage.
+
+The app has no authentication and supports bookmark registration, editing,
+deletion, search, pagination, page title fetching, and OGP thumbnail caching.
 
 ## Stack
 
-- Cloudflare Workers
+- Node.js
 - Hono API
 - React + Vite client
-- D1 for bookmark storage
-- R2 binding for future OGP image storage
+- SQLite for bookmark storage
+- Local filesystem storage for OGP images
 
 ## Local Setup
 
@@ -20,69 +22,57 @@ Install dependencies:
 npm install
 ```
 
-Create Cloudflare resources:
+Start the local API server and Vite client:
 
 ```sh
-npx wrangler d1 create bookmark-demo
-npx wrangler r2 bucket create bookmark-demo-ogp
-```
-
-Replace `database_id` in `wrangler.toml` with the D1 id returned by Wrangler.
-
-Apply the D1 migration locally:
-
-```sh
-npx wrangler d1 migrations apply bookmark-demo --local
-```
-
-Build the client, then start the local Cloudflare Worker development server:
-
-```sh
-npm run build
 npm run dev
 ```
 
-## Scripts
+Open the Vite URL, usually:
 
-- `npm run dev` starts the local Cloudflare Worker development server.
-- `npm run dev:client` starts only the Vite client dev server.
-- `npm run build` type-checks, builds the client, and dry-runs the Worker bundle.
-- `npm run deploy` type-checks, builds the client, and deploys the Worker to Cloudflare.
-- `npm run preview` also starts the local Cloudflare Worker development server.
-- `npm test` runs unit and UI tests.
-
-## Deploy
-
-This demo app is deployed manually from a local machine. It does not use GitHub
-Actions.
-
-Before deploying, make sure the D1 database id in `wrangler.toml` has been
-replaced with the real value from Cloudflare. Then apply the remote migration and
-deploy:
-
-```sh
-npx wrangler d1 migrations apply bookmark-demo --remote
-npm run deploy
+```text
+http://127.0.0.1:5173
 ```
 
-## Demo Reset
+The API server listens on `http://127.0.0.1:8787`. Vite proxies `/api` and
+`/ogp` requests to that server.
 
-The deployed Worker has a scheduled trigger that runs once every hour. When
-`DEMO=true` is set in `wrangler.toml`, it clears all objects from the configured
-R2 bucket, deletes all D1 bookmark rows, and loads 15 demo bookmarks from
-`src/worker/seed-bookmarks.json`.
+## Local Data
 
-## Initial Scope
+By default, the server creates:
 
-Bookmarks are created from a URL. The Worker fetches the page HTML, extracts the
-`<title>`, and stores the normalized URL and title in D1. If title fetching
+- `data/bookmarks.sqlite`
+- `data/ogp/`
+
+You can override those paths:
+
+```sh
+BOOKMARK_DB_PATH=/path/to/bookmarks.sqlite OGP_STORAGE_DIR=/path/to/ogp npm run dev:server
+```
+
+Migrations in `migrations/` are applied automatically when the server starts.
+
+## Scripts
+
+- `npm run dev` starts the local API server and Vite client.
+- `npm run dev:server` starts only the local API server.
+- `npm run dev:client` starts only the Vite client dev server.
+- `npm run build` type-checks and builds the client.
+- `npm run preview` builds the client and serves it from the local API server.
+- `npm test` runs unit and UI tests.
+
+## Behavior
+
+Bookmarks are created from a URL. The server fetches the page HTML, extracts the
+`<title>`, and stores the normalized URL and title in SQLite. If title fetching
 fails, the bookmark is still saved with the URL as its title.
 
 Saved bookmarks can be edited to update the URL and add comma-separated tags or
 a memo. They can also be deleted. Delete actions ask for browser confirmation
 before removing the bookmark. The list is paginated at 10 bookmarks per page.
-Search terms are split by spaces and matched as OR conditions against URL, title,
-tags, and memo with SQL `LIKE`.
+Search terms are split by spaces and matched as OR conditions against URL,
+title, tags, and memo with SQL `LIKE`.
 
-R2 is configured as `OGP_BUCKET`, but OGP image fetching and storage are reserved
-for a later iteration.
+When a page has an `og:image`, the server downloads a safe raster image type and
+stores it under `data/ogp/`. The client receives a local path like
+`/ogp/<uuid>.png`.

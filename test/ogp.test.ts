@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { extractOgImageUrl, storeOgpImage } from "../src/worker/ogp";
+import { extractOgImageUrl, storeOgpImage } from "../src/server/ogp";
 
 describe("extractOgImageUrl", () => {
   it("extracts an absolute og:image URL", () => {
@@ -33,9 +33,9 @@ const imageResponse = (type: string, bytes = new Uint8Array([1, 2, 3, 4])) =>
   new Response(bytes, { headers: { "content-type": type } });
 
 describe("storeOgpImage", () => {
-  it("stores the OGP image in R2 and returns its served path", async () => {
+  it("stores the OGP image locally and returns its served path", async () => {
     const put = vi.fn(async () => undefined);
-    const bucket = { put } as unknown as R2Bucket;
+    const storage = { put, get: vi.fn() };
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === "https://example.com/article") {
@@ -51,30 +51,30 @@ describe("storeOgpImage", () => {
 
     const result = await storeOgpImage(
       "https://example.com/article",
-      bucket,
+      storage,
       fetcher as unknown as typeof fetch
     );
 
     expect(result).toMatch(/^\/ogp\/[0-9a-f-]+\.png$/);
     expect(put).toHaveBeenCalledTimes(1);
-    const [key, body, options] = put.mock.calls[0] as unknown as [
+    const [name, body, contentType] = put.mock.calls[0] as unknown as [
       string,
-      ArrayBuffer,
-      { httpMetadata: { contentType: string } }
+      Uint8Array,
+      string
     ];
-    expect(`/${key}`).toBe(result);
+    expect(`/ogp/${name}`).toBe(result);
     expect(body.byteLength).toBe(4);
-    expect(options.httpMetadata.contentType).toBe("image/png");
+    expect(contentType).toBe("image/png");
   });
 
   it("returns an empty string when the page has no og:image", async () => {
     const put = vi.fn();
-    const bucket = { put } as unknown as R2Bucket;
+    const storage = { put, get: vi.fn() };
     const fetcher = vi.fn(async () => htmlResponse("<title>No OGP here</title>"));
 
     const result = await storeOgpImage(
       "https://example.com",
-      bucket,
+      storage,
       fetcher as unknown as typeof fetch
     );
 
@@ -84,7 +84,7 @@ describe("storeOgpImage", () => {
 
   it("skips images with a disallowed content type", async () => {
     const put = vi.fn();
-    const bucket = { put } as unknown as R2Bucket;
+    const storage = { put, get: vi.fn() };
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/page")) {
@@ -95,7 +95,7 @@ describe("storeOgpImage", () => {
 
     const result = await storeOgpImage(
       "https://example.com/page",
-      bucket,
+      storage,
       fetcher as unknown as typeof fetch
     );
 
@@ -105,14 +105,14 @@ describe("storeOgpImage", () => {
 
   it("returns an empty string when the page fetch fails", async () => {
     const put = vi.fn();
-    const bucket = { put } as unknown as R2Bucket;
+    const storage = { put, get: vi.fn() };
     const fetcher = vi.fn(async () => {
       throw new Error("network down");
     });
 
     const result = await storeOgpImage(
       "https://example.com",
-      bucket,
+      storage,
       fetcher as unknown as typeof fetch
     );
 

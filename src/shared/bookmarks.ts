@@ -4,7 +4,7 @@ export type Bookmark = {
   title: string;
   tags: string;
   memo: string;
-  // Served path of the OGP thumbnail stored in R2 (e.g. "/ogp/<uuid>.png").
+  // Served path of the OGP thumbnail stored locally (e.g. "/ogp/<uuid>.png").
   // Empty string when the page had no og:image.
   ogpImageUrl: string;
   createdAt: string;

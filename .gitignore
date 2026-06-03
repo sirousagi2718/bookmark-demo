@@ -4,3 +4,6 @@ dist
 .dev.vars
 .DS_Store
 .tmp
+data/*.sqlite
+data/*.sqlite-*
+data/ogp/
