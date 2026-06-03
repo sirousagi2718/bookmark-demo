@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { extractTitle, fetchPageTitle, normalizeUrl } from "../src/worker/title";
+import { extractTitle, fetchPageTitle, normalizeUrl } from "../src/server/title";
 
 describe("normalizeUrl", () => {
   it("normalizes http and https URLs and removes fragments", () => {
@@ -60,5 +60,22 @@ describe("fetchPageTitle", () => {
     );
 
     vi.useRealTimers();
+  });
+
+  it("rejects private URL targets before fetching", async () => {
+    const fetcher = vi.fn(async () => new Response("<title>Private</title>"));
+
+    await expect(fetchPageTitle("http://127.0.0.1", fetcher as typeof fetch)).resolves.toBeNull();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("does not follow redirects to private URL targets", async () => {
+    const fetcher = vi.fn(async () => new Response(null, {
+      status: 302,
+      headers: { location: "http://169.254.169.254/latest/meta-data" }
+    }));
+
+    await expect(fetchPageTitle("https://example.com", fetcher as typeof fetch)).resolves.toBeNull();
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,25 +1,25 @@
 # Usage Guide
 
-This guide explains how to run and use the Bookmark Demo app.
+This guide explains how to run and use the Bookmark Demo app locally.
 
 ## What This App Does
 
-Bookmark Demo is a small personal bookmark web app that runs on Cloudflare
-Workers.
+Bookmark Demo is a small personal bookmark web app with a local Node/Hono API.
 
-In the initial version, you can:
+You can:
 
 - Add a bookmark by entering a URL.
 - Edit a saved bookmark's URL, tags, and memo.
 - Delete a saved bookmark after a confirmation dialog.
 - Search bookmarks by URL, title, tags, or memo.
 - See saved bookmarks in a newest-first paginated list.
-- Store bookmark data in Cloudflare D1.
-
-The app also has an R2 binding named `OGP_BUCKET`, but OGP image storage is not
-implemented yet.
+- Store bookmark data in a local SQLite file.
+- Cache OGP images in local filesystem storage.
 
 ## Install Dependencies
+
+Use Node.js 22.5.0 or newer. This app uses `node:sqlite`, which is still marked
+experimental by Node.js and may print an ExperimentalWarning at startup.
 
 Run this once after cloning the repository:
 
@@ -27,88 +27,66 @@ Run this once after cloning the repository:
 npm install
 ```
 
-## Create Cloudflare Resources
-
-Create a D1 database:
-
-```sh
-npx wrangler d1 create bookmark-demo
-```
-
-Wrangler will print a `database_id`. Copy that value into `wrangler.toml`:
-
-```toml
-[[d1_databases]]
-binding = "DB"
-database_name = "bookmark-demo"
-database_id = "paste-your-database-id-here"
-```
-
-Create an R2 bucket:
-
-```sh
-npx wrangler r2 bucket create bookmark-demo-ogp
-```
-
-The bucket is configured in `wrangler.toml` as:
-
-```toml
-[[r2_buckets]]
-binding = "OGP_BUCKET"
-bucket_name = "bookmark-demo-ogp"
-```
-
-## Apply the D1 Migration
-
-For local development, apply migrations to the local D1 database:
-
-```sh
-npx wrangler d1 migrations apply bookmark-demo --local
-```
-
-For a real Cloudflare D1 database, apply migrations remotely:
-
-```sh
-npx wrangler d1 migrations apply bookmark-demo --remote
-```
-
-The migration creates the `bookmarks` table used by the app.
-
 ## Run Locally
 
-Build the client, then start the local Cloudflare Worker development server:
+Start the API server and Vite client:
 
 ```sh
-npm run build
 npm run dev
 ```
 
-Open the local URL printed by Wrangler, usually:
+Open the Vite URL, usually:
 
 ```text
-http://localhost:8787
+http://127.0.0.1:5173
 ```
+
+The API server listens on:
+
+```text
+http://127.0.0.1:8787
+```
+
+## Local Storage
+
+The server creates local data automatically:
+
+```text
+data/bookmarks.sqlite
+data/ogp/
+```
+
+Override those paths when needed:
+
+```sh
+BOOKMARK_DB_PATH=/tmp/bookmarks.sqlite OGP_STORAGE_DIR=/tmp/bookmark-ogp npm run dev:server
+```
+
+SQL migrations in `migrations/` are applied automatically on server startup.
 
 ## Use the App
 
 1. Open the app in your browser.
 2. Enter a URL such as `https://example.com`.
 3. Click `Add`.
-4. The Worker fetches the page HTML and tries to read its `<title>`.
-5. The bookmark is saved in D1 and appears in the list.
+4. The server fetches the page HTML and tries to read its `<title>`.
+5. The bookmark is saved in SQLite and appears in the list.
 
 Each page shows up to 10 bookmarks. Use `Previous` and `Next` to move through
 pages.
 
 Use the search box to filter bookmarks. Multiple words are split by spaces and
-matched as OR search terms, so `cloudflare hono` returns bookmarks containing
-either `cloudflare` or `hono` in the URL, title, tags, or memo.
+matched as AND search terms, so `sqlite hono` returns bookmarks that match both
+`sqlite` and `hono` across the URL, title, tags, or memo.
 
 To add tags or a memo, click `Edit`, update the fields, and click `Save`. To
 remove a bookmark, click `Delete` and confirm the browser dialog.
 
 If title fetching fails, the bookmark is still saved. In that case, the URL is
 used as the title.
+
+If the page exposes an `og:image`, the server downloads a safe raster image type
+and stores it locally under `data/ogp/`.
 
 ## API Endpoints
 
@@ -136,42 +114,27 @@ Run tests:
 npm test
 ```
 
-Build and dry-run the Worker bundle:
+Build the client:
 
 ```sh
 npm run build
 ```
 
-Deploy the Worker to Cloudflare:
+Start only the local API server:
 
 ```sh
-npx wrangler d1 migrations apply bookmark-demo --remote
-npm run deploy
+npm run dev:server
 ```
 
-Start the local Worker development server:
+Start only the Vite client:
 
 ```sh
-npm run dev
+npm run dev:client
 ```
-
-## Hourly Demo Reset
-
-This is a public demo app, so the Worker resets demo data once every hour using
-the cron trigger in `wrangler.toml`. The reset only runs when `DEMO=true` is set.
-
-On each scheduled run, the Worker:
-
-- Deletes every object in the configured R2 bucket.
-- Deletes all rows from the D1 `bookmarks` table.
-- Inserts the 15 demo bookmarks from `src/worker/seed-bookmarks.json`.
 
 ## Notes for Beginners
 
 - `src/client` contains the React browser UI.
-- `src/worker` contains the Cloudflare Worker API.
-- `src/worker/seed-bookmarks.json` contains the demo bookmarks restored hourly.
-- `src/shared` contains TypeScript types used by both client and Worker code.
-- `migrations` contains SQL files for D1.
-- `wrangler.toml` connects the code to Cloudflare bindings like D1, R2, and
-  static assets.
+- `src/server` contains the local Hono API.
+- `src/shared` contains TypeScript types used by both client and server code.
+- `migrations` contains SQL files applied to the local SQLite database.

@@ -156,6 +156,22 @@ h1 {
   border-radius: 8px;
 }
 
+/* When a thumbnail exists, add a fixed-width image column on the left. */
+.bookmark-item:has(.bookmark-thumb) {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.bookmark-thumb {
+  width: 120px;
+  height: 90px;
+  /* object-fit: cover keeps the thumbnail's aspect ratio while filling the
+     fixed box, so wide and tall OGP images both look tidy. */
+  object-fit: cover;
+  background: #eef2f6;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+}
+
 .edit-form {
   grid-column: 1 / -1;
 }
@@ -346,6 +362,19 @@ h1 {
 
   .bookmark-item {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bookmark-item:has(.bookmark-thumb) {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .bookmark-item:has(.bookmark-thumb) .icon-actions {
+    grid-column: 1 / -1;
+  }
+
+  .bookmark-thumb {
+    width: 84px;
+    height: 84px;
   }
 
   .icon-actions {
