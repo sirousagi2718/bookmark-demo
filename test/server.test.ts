@@ -60,11 +60,11 @@ describe("local server bookmarks API", () => {
     expect(body.bookmarks).toHaveLength(1);
   });
 
-  it("uses OR search terms across bookmark fields", async () => {
+  it("uses AND search terms across bookmark fields", async () => {
     addBookmark({
       url: "https://example.com/hono",
       title: "Hono",
-      tags: "typescript",
+      tags: "typescript, database",
       memo: "Framework"
     });
     addBookmark({
@@ -84,8 +84,8 @@ describe("local server bookmarks API", () => {
     const body = await response.json() as { bookmarks: Array<{ title: string }>; totalCount: number };
 
     expect(response.status).toBe(200);
-    expect(body.totalCount).toBe(2);
-    expect(body.bookmarks.map((bookmark) => bookmark.title).sort()).toEqual(["Hono", "SQLite"]);
+    expect(body.totalCount).toBe(1);
+    expect(body.bookmarks.map((bookmark) => bookmark.title)).toEqual(["Hono"]);
   });
 
   it("creates a bookmark and rejects duplicate normalized URLs", async () => {

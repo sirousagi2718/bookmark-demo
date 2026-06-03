@@ -1,3 +1,5 @@
+import { fetchWithTimeout, readLimitedBody } from "./fetch";
+
 export type OgpStorage = {
   put: (name: string, body: Uint8Array, contentType: string) => Promise<unknown>;
   get: (name: string) => Promise<{ body: Uint8Array; contentType: string; etag: string } | null>;
@@ -12,8 +14,6 @@ const ALLOWED_IMAGE_TYPES = new Map<string, string>([
 ]);
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-
-const FETCH_TIMEOUT_MS = 5000;
 
 export const extractOgImageUrl = (html: string, baseUrl: string): string | null => {
   const metaTags = html.match(/<meta\b[^>]*>/gi);
@@ -35,41 +35,16 @@ export const extractOgImageUrl = (html: string, baseUrl: string): string | null 
     try {
       const resolved = new URL(rawUrl, baseUrl);
       if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
-        return null;
+        continue;
       }
 
       return resolved.toString();
     } catch {
-      return null;
+      continue;
     }
   }
 
   return null;
-};
-
-const fetchWithTimeout = async (
-  url: string,
-  fetcher: typeof fetch,
-  accept: string
-): Promise<Response | null> => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-  try {
-    const response = await fetcher(url, {
-      headers: {
-        "user-agent": "bookmark-demo/0.1",
-        accept
-      },
-      signal: controller.signal
-    });
-
-    return response.ok ? response : null;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeoutId);
-  }
 };
 
 export const storeOgpImage = async (
@@ -107,15 +82,15 @@ export const storeOgpImage = async (
     return "";
   }
 
-  const body = await imageResponse.arrayBuffer();
-  if (body.byteLength === 0 || body.byteLength > MAX_IMAGE_BYTES) {
+  const body = await readLimitedBody(imageResponse, MAX_IMAGE_BYTES);
+  if (!body) {
     return "";
   }
 
   const name = `${crypto.randomUUID()}.${extension}`;
 
   try {
-    await storage.put(name, new Uint8Array(body), imageType);
+    await storage.put(name, body, imageType);
   } catch {
     return "";
   }

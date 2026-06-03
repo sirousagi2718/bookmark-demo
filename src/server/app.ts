@@ -55,7 +55,7 @@ const buildSearchFilter = (terms: string[]) => {
 
   const sql = terms
     .map(() => "(url LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\' OR memo LIKE ? ESCAPE '\\')")
-    .join(" OR ");
+    .join(" AND ");
   const bindings = terms.flatMap((term) => {
     const pattern = `%${escapeLikeTerm(term)}%`;
     return [pattern, pattern, pattern, pattern];

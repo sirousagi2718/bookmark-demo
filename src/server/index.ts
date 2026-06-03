@@ -3,8 +3,12 @@ import { join, resolve } from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createApp } from "./app";
-import { BookmarkDatabase } from "./db";
-import { LocalOgpStorage } from "./storage";
+import { assertSupportedNodeVersion } from "./node-version";
+
+assertSupportedNodeVersion();
+
+const { BookmarkDatabase } = await import("./db");
+const { LocalOgpStorage } = await import("./storage");
 
 const rootDir = process.cwd();
 const dbPath = resolve(process.env.BOOKMARK_DB_PATH ?? join(rootDir, "data", "bookmarks.sqlite"));

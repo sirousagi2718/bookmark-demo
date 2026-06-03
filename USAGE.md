@@ -18,6 +18,9 @@ You can:
 
 ## Install Dependencies
 
+Use Node.js 22.5.0 or newer. This app uses `node:sqlite`, which is still marked
+experimental by Node.js and may print an ExperimentalWarning at startup.
+
 Run this once after cloning the repository:
 
 ```sh
@@ -73,8 +76,8 @@ Each page shows up to 10 bookmarks. Use `Previous` and `Next` to move through
 pages.
 
 Use the search box to filter bookmarks. Multiple words are split by spaces and
-matched as OR search terms, so `sqlite hono` returns bookmarks containing either
-`sqlite` or `hono` in the URL, title, tags, or memo.
+matched as AND search terms, so `sqlite hono` returns bookmarks that match both
+`sqlite` and `hono` across the URL, title, tags, or memo.
 
 To add tags or a memo, click `Edit`, update the fields, and click `Save`. To
 remove a bookmark, click `Delete` and confirm the browser dialog.

@@ -1,4 +1,7 @@
+import { fetchWithTimeout, readLimitedBody } from "./fetch";
+
 const TITLE_PATTERN = /<title\b[^>]*>([\s\S]*?)<\/title>/i;
+const MAX_TITLE_HTML_BYTES = 1024 * 1024;
 
 const decodeHtmlEntities = (value: string) =>
   value
@@ -38,31 +41,20 @@ export const extractTitle = (html: string) => {
 };
 
 export const fetchPageTitle = async (url: string, fetcher: typeof fetch = fetch) => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-  try {
-    const response = await fetcher(url, {
-      headers: {
-        "user-agent": "bookmark-demo/0.1"
-      },
-      signal: controller.signal
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const contentType = response.headers.get("content-type") ?? "";
-    if (contentType && !contentType.toLowerCase().includes("text/html")) {
-      return null;
-    }
-
-    const html = await response.text();
-    return extractTitle(html);
-  } catch {
+  const response = await fetchWithTimeout(url, fetcher, "text/html", 4000);
+  if (!response) {
     return null;
-  } finally {
-    clearTimeout(timeoutId);
   }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType && !contentType.toLowerCase().includes("text/html")) {
+    return null;
+  }
+
+  const body = await readLimitedBody(response, MAX_TITLE_HTML_BYTES);
+  if (!body) {
+    return null;
+  }
+
+  return extractTitle(new TextDecoder().decode(body));
 };

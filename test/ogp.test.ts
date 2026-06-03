@@ -24,6 +24,17 @@ describe("extractOgImageUrl", () => {
     const html = '<meta property="og:image" content="data:image/png;base64,AAAA">';
     expect(extractOgImageUrl(html, "https://example.com")).toBeNull();
   });
+
+  it("continues to later og:image tags after an invalid value", () => {
+    const html = `
+      <meta property="og:image" content="data:image/png;base64,AAAA">
+      <meta property="og:image" content="https://cdn.example.com/fallback.png">
+    `;
+
+    expect(extractOgImageUrl(html, "https://example.com")).toBe(
+      "https://cdn.example.com/fallback.png"
+    );
+  });
 });
 
 const htmlResponse = (body: string) =>
@@ -117,6 +128,81 @@ describe("storeOgpImage", () => {
     );
 
     expect(result).toBe("");
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("skips images whose content-length exceeds the max size", async () => {
+    const put = vi.fn();
+    const storage = { put, get: vi.fn() };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/page")) {
+        return htmlResponse('<meta property="og:image" content="https://x.test/large.png">');
+      }
+      return new Response(new Uint8Array([1]), {
+        headers: {
+          "content-type": "image/png",
+          "content-length": String(5 * 1024 * 1024 + 1)
+        }
+      });
+    });
+
+    const result = await storeOgpImage(
+      "https://example.com/page",
+      storage,
+      fetcher as unknown as typeof fetch
+    );
+
+    expect(result).toBe("");
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("stops streaming an image once it exceeds the max size", async () => {
+    const put = vi.fn();
+    const storage = { put, get: vi.fn() };
+    const chunk = new Uint8Array(1024 * 1024);
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/page")) {
+        return htmlResponse('<meta property="og:image" content="https://x.test/stream.png">');
+      }
+
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            for (let index = 0; index < 6; index += 1) {
+              controller.enqueue(chunk);
+            }
+            controller.close();
+          }
+        }),
+        { headers: { "content-type": "image/png" } }
+      );
+    });
+
+    const result = await storeOgpImage(
+      "https://example.com/page",
+      storage,
+      fetcher as unknown as typeof fetch
+    );
+
+    expect(result).toBe("");
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("rejects private URL targets before fetching", async () => {
+    const put = vi.fn();
+    const storage = { put, get: vi.fn() };
+    const fetcher = vi.fn(async () => htmlResponse("<title>Private</title>"));
+
+    const result = await storeOgpImage(
+      "http://127.0.0.1/page",
+      storage,
+      fetcher as unknown as typeof fetch
+    );
+
+    expect(result).toBe("");
+    expect(fetcher).not.toHaveBeenCalled();
     expect(put).not.toHaveBeenCalled();
   });
 });
