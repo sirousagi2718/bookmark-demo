@@ -31,6 +31,12 @@ afterEach(async () => {
 });
 
 describe("local server bookmarks API", () => {
+  it("returns 404 for the removed OGP image endpoint", async () => {
+    const response = await createTestApp().request("http://localhost/api/ogp/some-name");
+
+    expect(response.status).toBe(404);
+  });
+
   it("clamps an out-of-range page before selecting bookmarks", async () => {
     for (let index = 1; index <= 21; index += 1) {
       addBookmark({
