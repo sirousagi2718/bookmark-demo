@@ -8,11 +8,9 @@ import { assertSupportedNodeVersion } from "./node-version";
 assertSupportedNodeVersion();
 
 const { BookmarkDatabase } = await import("./db");
-const { LocalOgpStorage } = await import("./storage");
 
 const rootDir = process.cwd();
 const dbPath = resolve(process.env.BOOKMARK_DB_PATH ?? join(rootDir, "data", "bookmarks.sqlite"));
-const ogpStorageDir = resolve(process.env.OGP_STORAGE_DIR ?? join(rootDir, "data", "ogp"));
 const migrationsDir = resolve(rootDir, "migrations");
 const clientDir = resolve(rootDir, "dist", "client");
 const port = Number(process.env.PORT ?? "8787");
@@ -20,10 +18,7 @@ const port = Number(process.env.PORT ?? "8787");
 const db = new BookmarkDatabase(dbPath);
 db.migrate(migrationsDir);
 
-const app = createApp({
-  db,
-  ogpStorage: new LocalOgpStorage(ogpStorageDir)
-});
+const app = createApp({ db });
 
 if (existsSync(clientDir)) {
   app.use("/*", serveStatic({ root: clientDir }));
@@ -34,4 +29,3 @@ serve({ fetch: app.fetch, port });
 
 console.log(`Bookmark Demo server running at http://127.0.0.1:${port}`);
 console.log(`SQLite database: ${dbPath}`);
-console.log(`OGP storage: ${ogpStorageDir}`);

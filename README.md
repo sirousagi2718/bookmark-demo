@@ -1,10 +1,10 @@
 # Bookmark Demo
 
 A minimal personal bookmark app that runs locally with a Node/Hono API, a React
-+ Vite client, a SQLite database file, and local OGP image storage.
++ Vite client, and a SQLite database file.
 
 The app has no authentication and supports bookmark registration, editing,
-deletion, search, pagination, page title fetching, and OGP thumbnail caching.
+deletion, search, pagination, and page title fetching.
 
 ## Stack
 
@@ -12,7 +12,6 @@ deletion, search, pagination, page title fetching, and OGP thumbnail caching.
 - Hono API
 - React + Vite client
 - SQLite for bookmark storage
-- Local filesystem storage for OGP images
 
 ## Local Setup
 
@@ -37,20 +36,19 @@ Open the Vite URL, usually:
 http://127.0.0.1:5173
 ```
 
-The API server listens on `http://127.0.0.1:8787`. Vite proxies `/api` and
-`/ogp` requests to that server.
+The API server listens on `http://127.0.0.1:8787`. Vite proxies `/api` requests
+to that server.
 
 ## Local Data
 
 By default, the server creates:
 
 - `data/bookmarks.sqlite`
-- `data/ogp/`
 
-You can override those paths:
+You can override the database path:
 
 ```sh
-BOOKMARK_DB_PATH=/path/to/bookmarks.sqlite OGP_STORAGE_DIR=/path/to/ogp npm run dev:server
+BOOKMARK_DB_PATH=/path/to/bookmarks.sqlite npm run dev:server
 ```
 
 Migrations in `migrations/` are applied automatically when the server starts.
@@ -75,7 +73,3 @@ a memo. They can also be deleted. Delete actions ask for browser confirmation
 before removing the bookmark. The list is paginated at 10 bookmarks per page.
 Search terms are split by spaces and matched as AND conditions against URL,
 title, tags, and memo with SQL `LIKE`.
-
-When a page has an `og:image`, the server downloads a safe raster image type and
-stores it under `data/ogp/`. The client receives a local path like
-`/ogp/<uuid>.png`.

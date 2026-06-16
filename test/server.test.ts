@@ -1,31 +1,27 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/server/app";
 import { BookmarkDatabase } from "../src/server/db";
-import { LocalOgpStorage } from "../src/server/storage";
 
 let tempDir: string;
 let db: BookmarkDatabase;
-let storage: LocalOgpStorage;
 
-const createTestApp = () => createApp({ db, ogpStorage: storage });
+const createTestApp = () => createApp({ db });
 
-const addBookmark = (input: { url: string; title: string; tags?: string; memo?: string; ogpImageUrl?: string }) =>
+const addBookmark = (input: { url: string; title: string; tags?: string; memo?: string }) =>
   db.createBookmark({
     url: input.url,
     title: input.title,
     tags: input.tags ?? "",
-    memo: input.memo ?? "",
-    ogpImageUrl: input.ogpImageUrl ?? ""
+    memo: input.memo ?? ""
   });
 
 beforeEach(async () => {
   tempDir = await mkdtemp(join(tmpdir(), "bookmark-demo-"));
   db = new BookmarkDatabase(join(tempDir, "bookmarks.sqlite"));
   db.migrate(join(process.cwd(), "migrations"));
-  storage = new LocalOgpStorage(join(tempDir, "ogp"));
 });
 
 afterEach(async () => {
@@ -151,30 +147,5 @@ describe("local server bookmarks API", () => {
     });
     expect(deleted.status).toBe(204);
     expect(missing.status).toBe(404);
-  });
-});
-
-describe("local OGP image route", () => {
-  it("serves stored OGP images", async () => {
-    await storage.put("cover.png", new Uint8Array([1, 2, 3]), "image/png");
-
-    const response = await createTestApp().request("http://localhost/ogp/cover.png");
-    const body = new Uint8Array(await response.arrayBuffer());
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toBe("image/png");
-    expect(response.headers.get("etag")).toMatch(/^"[0-9a-f]{64}"$/);
-    expect(response.headers.get("cache-control")).toContain("max-age=86400");
-    expect([...body]).toEqual([1, 2, 3]);
-  });
-
-  it("returns 404 for missing images and path traversal attempts", async () => {
-    const missing = await createTestApp().request("http://localhost/ogp/missing.png");
-    const traversalPath = join(tempDir, "outside.png");
-    await writeFile(traversalPath, new Uint8Array([1, 2, 3]));
-    const traversal = await createTestApp().request("http://localhost/ogp/..%2Foutside.png");
-
-    expect(missing.status).toBe(404);
-    expect(traversal.status).toBe(404);
   });
 });

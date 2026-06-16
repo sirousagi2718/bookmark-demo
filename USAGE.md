@@ -14,7 +14,6 @@ You can:
 - Search bookmarks by URL, title, tags, or memo.
 - See saved bookmarks in a newest-first paginated list.
 - Store bookmark data in a local SQLite file.
-- Cache OGP images in local filesystem storage.
 
 ## Install Dependencies
 
@@ -53,13 +52,12 @@ The server creates local data automatically:
 
 ```text
 data/bookmarks.sqlite
-data/ogp/
 ```
 
-Override those paths when needed:
+Override the database path when needed:
 
 ```sh
-BOOKMARK_DB_PATH=/tmp/bookmarks.sqlite OGP_STORAGE_DIR=/tmp/bookmark-ogp npm run dev:server
+BOOKMARK_DB_PATH=/tmp/bookmarks.sqlite npm run dev:server
 ```
 
 SQL migrations in `migrations/` are applied automatically on server startup.
@@ -84,9 +82,6 @@ remove a bookmark, click `Delete` and confirm the browser dialog.
 
 If title fetching fails, the bookmark is still saved. In that case, the URL is
 used as the title.
-
-If the page exposes an `og:image`, the server downloads a safe raster image type
-and stores it locally under `data/ogp/`.
 
 ## API Endpoints
 
