@@ -1,12 +1,10 @@
 import { Hono } from "hono";
 import type { BookmarkDatabase } from "./db";
-import { storeOgpImage, type OgpStorage } from "./ogp";
 import type { CreateBookmarkRequest, UpdateBookmarkRequest } from "../shared/bookmarks";
 import { fetchPageTitle, normalizeUrl } from "./title";
 
 export type AppDependencies = {
   db: BookmarkDatabase;
-  ogpStorage: OgpStorage;
 };
 
 const PAGE_SIZE = 10;
@@ -70,7 +68,7 @@ const buildSearchFilter = (terms: string[]) => {
 const isUniqueError = (error: unknown) =>
   error instanceof Error && error.message.toLowerCase().includes("unique");
 
-export const createApp = ({ db, ogpStorage }: AppDependencies) => {
+export const createApp = ({ db }: AppDependencies) => {
   const app = new Hono();
 
   app.get("/api/bookmarks", (c) => {
@@ -106,10 +104,9 @@ export const createApp = ({ db, ogpStorage }: AppDependencies) => {
     const tags = cleanTags((payload as CreateBookmarkRequest).tags);
     const memo = cleanText((payload as CreateBookmarkRequest).memo);
     const title = (await fetchPageTitle(url)) ?? url;
-    const ogpImageUrl = await storeOgpImage(url, ogpStorage);
 
     try {
-      const bookmark = db.createBookmark({ url, title, tags, memo, ogpImageUrl });
+      const bookmark = db.createBookmark({ url, title, tags, memo });
       return c.json({ bookmark }, 201);
     } catch (error) {
       if (isUniqueError(error)) {
@@ -149,10 +146,9 @@ export const createApp = ({ db, ogpStorage }: AppDependencies) => {
     const tags = cleanTags((payload as UpdateBookmarkRequest).tags);
     const memo = cleanText((payload as UpdateBookmarkRequest).memo);
     const title = (await fetchPageTitle(url)) ?? url;
-    const ogpImageUrl = await storeOgpImage(url, ogpStorage);
 
     try {
-      const bookmark = db.updateBookmark(id, { url, title, tags, memo, ogpImageUrl });
+      const bookmark = db.updateBookmark(id, { url, title, tags, memo });
       if (!bookmark) {
         return c.json({ error: "Bookmark not found." }, 404);
       }
@@ -178,26 +174,6 @@ export const createApp = ({ db, ogpStorage }: AppDependencies) => {
     }
 
     return c.body(null, 204);
-  });
-
-  app.get("/ogp/:name", async (c) => {
-    const image = await ogpStorage.get(c.req.param("name"));
-    if (!image) {
-      return c.json({ error: "Image not found." }, 404);
-    }
-
-    const body = image.body.buffer.slice(
-      image.body.byteOffset,
-      image.body.byteOffset + image.body.byteLength
-    ) as ArrayBuffer;
-
-    return new Response(body, {
-      headers: {
-        "content-type": image.contentType,
-        etag: image.etag,
-        "cache-control": "public, max-age=86400, immutable"
-      }
-    });
   });
 
   return app;

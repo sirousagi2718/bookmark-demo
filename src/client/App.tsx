@@ -391,15 +391,6 @@ export function App() {
               </form>
             ) : (
               <>
-                {bookmark.ogpImageUrl ? (
-                  <img
-                    className="bookmark-thumb"
-                    src={bookmark.ogpImageUrl}
-                    alt=""
-                    aria-hidden="true"
-                    loading="lazy"
-                  />
-                ) : null}
                 <div className="bookmark-content">
                   <a href={bookmark.url} target="_blank" rel="noreferrer">
                     {bookmark.title}
