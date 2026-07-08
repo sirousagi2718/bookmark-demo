@@ -59,24 +59,40 @@ const parseSearchTerms = (value: string | undefined) =>
     .map((term) => term.trim())
     .filter(Boolean);
 
-const buildSearchFilter = (terms: string[]) => {
-  if (terms.length === 0) {
-    return {
-      sql: "",
-      bindings: [] as string[]
-    };
+// "none" limits the list to unfiled bookmarks; null applies no folder filter.
+type FolderFilter = number | "none" | null;
+
+const parseFolderFilter = (value: string | undefined): FolderFilter => {
+  if (value === undefined || value === "") {
+    return null;
   }
 
-  const sql = terms
-    .map(() => "(url LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\' OR memo LIKE ? ESCAPE '\\')")
-    .join(" AND ");
-  const bindings = terms.flatMap((term) => {
+  if (value === "none") {
+    return "none";
+  }
+
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+
+const buildListFilter = (terms: string[], folder: FolderFilter) => {
+  const conditions = terms.map(
+    () => "(url LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\' OR memo LIKE ? ESCAPE '\\')"
+  );
+  const bindings: Array<string | number> = terms.flatMap((term) => {
     const pattern = `%${escapeLikeTerm(term)}%`;
     return [pattern, pattern, pattern, pattern];
   });
 
+  if (folder === "none") {
+    conditions.push("folder_id IS NULL");
+  } else if (folder !== null) {
+    conditions.push("folder_id = ?");
+    bindings.push(folder);
+  }
+
   return {
-    sql: `WHERE ${sql}`,
+    sql: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "",
     bindings
   };
 };
@@ -91,9 +107,10 @@ export const createApp = ({ db }: AppDependencies) => {
     const pageParam = Number(c.req.query("page") ?? "1");
     const requestedPage = Number.isInteger(pageParam) && pageParam > 0 ? pageParam : 1;
     const searchTerms = parseSearchTerms(c.req.query("q"));
-    const searchFilter = buildSearchFilter(searchTerms);
+    const folderFilter = parseFolderFilter(c.req.query("folderId"));
+    const listFilter = buildListFilter(searchTerms, folderFilter);
 
-    return c.json(db.listBookmarks(searchFilter, requestedPage, PAGE_SIZE));
+    return c.json(db.listBookmarks(listFilter, requestedPage, PAGE_SIZE));
   });
 
   app.post("/api/bookmarks", async (c) => {

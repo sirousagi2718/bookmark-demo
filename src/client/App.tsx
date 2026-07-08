@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import type { ApiError, Bookmark } from "../shared/bookmarks";
+import type { Folder } from "../shared/folders";
 import deleteIcon from "./assets/icons/delete.svg";
 import editIcon from "./assets/icons/edit.svg";
 
@@ -15,17 +16,30 @@ type CreateBookmarkResponse = {
   bookmark: Bookmark;
 };
 
+type FoldersResponse = {
+  folders: Folder[];
+};
+
 type FormState = {
   url: string;
   tags: string;
   memo: string;
+  // Select values are strings: "" means no folder, otherwise a folder id.
+  folderId: string;
 };
 
 const emptyForm: FormState = {
   url: "",
   tags: "",
-  memo: ""
+  memo: "",
+  folderId: ""
 };
+
+// The folder filter mirrors the API's folderId parameter:
+// "" shows every bookmark, "none" shows unfiled ones, an id shows one folder.
+const isValidFolderFilter = (value: string) => value === "" || value === "none" || /^[1-9]\d*$/.test(value);
+
+const toFolderIdPayload = (value: string) => (value === "" ? null : Number(value));
 
 const splitTags = (tags: string) =>
   tags
@@ -36,14 +50,16 @@ const splitTags = (tags: string) =>
 const readUrlState = () => {
   const params = new URLSearchParams(window.location.search);
   const pageParam = Number(params.get("page") ?? "1");
+  const folderParam = params.get("folderId") ?? "";
 
   return {
     page: Number.isInteger(pageParam) && pageParam > 0 ? pageParam : 1,
-    query: params.get("q")?.trim() ?? ""
+    query: params.get("q")?.trim() ?? "",
+    folderId: isValidFolderFilter(folderParam) ? folderParam : ""
   };
 };
 
-const pushUrlState = (targetPage: number, targetQuery: string) => {
+const pushUrlState = (targetPage: number, targetQuery: string, targetFolder: string) => {
   const params = new URLSearchParams();
   const trimmedQuery = targetQuery.trim();
 
@@ -55,10 +71,14 @@ const pushUrlState = (targetPage: number, targetQuery: string) => {
     params.set("q", trimmedQuery);
   }
 
+  if (targetFolder) {
+    params.set("folderId", targetFolder);
+  }
+
   // pushState updates the address bar and browser history without reloading the
   // React app. Beginners can think of it as "change the URL for this screen".
   const nextUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
-  window.history.pushState({ page: targetPage, query: trimmedQuery }, "", nextUrl);
+  window.history.pushState({ page: targetPage, query: trimmedQuery, folderId: targetFolder }, "", nextUrl);
 };
 
 const readError = async (response: Response) => {
@@ -75,62 +95,93 @@ const readError = async (response: Response) => {
 
 export function App() {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<FormState>(emptyForm);
   const [searchInput, setSearchInput] = useState("");
   const [query, setQuery] = useState("");
+  const [folderFilter, setFolderFilter] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isManagingFolders, setIsManagingFolders] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [editingFolderId, setEditingFolderId] = useState<number | null>(null);
+  const [folderNameDraft, setFolderNameDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const loadBookmarks = useCallback(async (targetPage = page, targetQuery = query) => {
-    setIsLoading(true);
-    setError(null);
-
+  const loadFolders = useCallback(async () => {
     try {
-      const params = new URLSearchParams({ page: String(targetPage) });
-      const trimmedQuery = targetQuery.trim();
-      if (trimmedQuery) {
-        // The API splits this value by spaces and OR-searches each word.
-        params.set("q", trimmedQuery);
-      }
-
-      // Relative URLs call the same API origin in production.
-      const response = await fetch(`/api/bookmarks?${params.toString()}`);
+      const response = await fetch("/api/folders");
       if (!response.ok) {
         throw new Error(await readError(response));
       }
 
-      const data = (await response.json()) as BookmarksResponse;
-      setBookmarks(data.bookmarks);
-      setPage(data.page);
-      setTotalPages(data.totalPages);
-      setTotalCount(data.totalCount);
+      const data = (await response.json()) as FoldersResponse;
+      setFolders(data.folders);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load bookmarks.");
-    } finally {
-      setIsLoading(false);
+      setError(loadError instanceof Error ? loadError.message : "Failed to load folders.");
     }
-  }, [page, query]);
+  }, []);
+
+  const loadBookmarks = useCallback(
+    async (targetPage = page, targetQuery = query, targetFolder = folderFilter) => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const params = new URLSearchParams({ page: String(targetPage) });
+        const trimmedQuery = targetQuery.trim();
+        if (trimmedQuery) {
+          // The API splits this value by spaces and OR-searches each word.
+          params.set("q", trimmedQuery);
+        }
+
+        if (targetFolder) {
+          // "none" asks the API for unfiled bookmarks, an id for one folder.
+          params.set("folderId", targetFolder);
+        }
+
+        // Relative URLs call the same API origin in production.
+        const response = await fetch(`/api/bookmarks?${params.toString()}`);
+        if (!response.ok) {
+          throw new Error(await readError(response));
+        }
+
+        const data = (await response.json()) as BookmarksResponse;
+        setBookmarks(data.bookmarks);
+        setPage(data.page);
+        setTotalPages(data.totalPages);
+        setTotalCount(data.totalCount);
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "Failed to load bookmarks.");
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [page, query, folderFilter]
+  );
 
   useEffect(() => {
     const syncFromUrl = () => {
       const nextState = readUrlState();
       setSearchInput(nextState.query);
       setQuery(nextState.query);
+      setFolderFilter(nextState.folderId);
       // Back/forward navigation should show the same data as the URL.
-      void loadBookmarks(nextState.page, nextState.query);
+      void loadBookmarks(nextState.page, nextState.query, nextState.folderId);
     };
 
     const initialState = readUrlState();
     setSearchInput(initialState.query);
     setQuery(initialState.query);
-    // useEffect cannot be async directly, so we start the async function here.
-    void loadBookmarks(initialState.page, initialState.query);
+    setFolderFilter(initialState.folderId);
+    // useEffect cannot be async directly, so we start the async functions here.
+    void loadFolders();
+    void loadBookmarks(initialState.page, initialState.query, initialState.folderId);
 
     window.addEventListener("popstate", syncFromUrl);
 
@@ -155,13 +206,14 @@ export function App() {
     setError(null);
 
     try {
-      // Creation starts with only a URL. Tags and memo are added later from Edit.
+      // Creation starts with a URL and an optional folder. Tags and memo are
+      // added later from Edit.
       const response = await fetch("/api/bookmarks", {
         method: "POST",
         headers: {
           "content-type": "application/json"
         },
-        body: JSON.stringify({ url: form.url })
+        body: JSON.stringify({ url: form.url, folderId: toFolderIdPayload(form.folderId) })
       });
 
       if (!response.ok) {
@@ -169,10 +221,10 @@ export function App() {
       }
 
       await response.json() as CreateBookmarkResponse;
-      setForm(emptyForm);
+      setForm((current) => ({ ...emptyForm, folderId: current.folderId }));
       setEditingId(null);
-      pushUrlState(1, query);
-      await loadBookmarks(1, query);
+      pushUrlState(1, query, folderFilter);
+      await loadBookmarks(1, query, folderFilter);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Failed to save bookmark.");
     } finally {
@@ -185,7 +237,8 @@ export function App() {
     setEditForm({
       url: bookmark.url,
       tags: bookmark.tags,
-      memo: bookmark.memo
+      memo: bookmark.memo,
+      folderId: bookmark.folderId ? String(bookmark.folderId) : ""
     });
   };
 
@@ -206,7 +259,12 @@ export function App() {
         headers: {
           "content-type": "application/json"
         },
-        body: JSON.stringify(editForm)
+        body: JSON.stringify({
+          url: editForm.url,
+          tags: editForm.tags,
+          memo: editForm.memo,
+          folderId: toFolderIdPayload(editForm.folderId)
+        })
       });
 
       if (!response.ok) {
@@ -215,7 +273,7 @@ export function App() {
 
       setEditingId(null);
       setEditForm(emptyForm);
-      await loadBookmarks(page, query);
+      await loadBookmarks(page, query, folderFilter);
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : "Failed to update bookmark.");
     } finally {
@@ -242,8 +300,8 @@ export function App() {
 
       setEditingId(null);
       const targetPage = bookmarks.length === 1 && page > 1 ? page - 1 : page;
-      pushUrlState(targetPage, query);
-      await loadBookmarks(targetPage, query);
+      pushUrlState(targetPage, query, folderFilter);
+      await loadBookmarks(targetPage, query, folderFilter);
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Failed to delete bookmark.");
     } finally {
@@ -257,8 +315,8 @@ export function App() {
     }
 
     setEditingId(null);
-    pushUrlState(targetPage, query);
-    await loadBookmarks(targetPage, query);
+    pushUrlState(targetPage, query, folderFilter);
+    await loadBookmarks(targetPage, query, folderFilter);
   };
 
   const handleSearch = async (event: FormEvent<HTMLFormElement>) => {
@@ -269,17 +327,147 @@ export function App() {
     // pagination stable until the user submits the search form.
     setQuery(nextQuery);
     setEditingId(null);
-    pushUrlState(1, nextQuery);
-    await loadBookmarks(1, nextQuery);
+    pushUrlState(1, nextQuery, folderFilter);
+    await loadBookmarks(1, nextQuery, folderFilter);
   };
 
   const clearSearch = async () => {
     setSearchInput("");
     setQuery("");
     setEditingId(null);
-    pushUrlState(1, "");
-    await loadBookmarks(1, "");
+    pushUrlState(1, "", folderFilter);
+    await loadBookmarks(1, "", folderFilter);
   };
+
+  const selectFolder = async (nextFolder: string) => {
+    if (nextFolder === folderFilter) {
+      return;
+    }
+
+    setFolderFilter(nextFolder);
+    setEditingId(null);
+    // Adding while a folder is open most likely means adding into that folder,
+    // so keep the create form's select in sync with the filter.
+    setForm((current) => ({
+      ...current,
+      folderId: nextFolder && nextFolder !== "none" ? nextFolder : ""
+    }));
+    pushUrlState(1, query, nextFolder);
+    await loadBookmarks(1, query, nextFolder);
+  };
+
+  const handleCreateFolder = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/folders", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ name: newFolderName })
+      });
+
+      if (!response.ok) {
+        throw new Error(await readError(response));
+      }
+
+      setNewFolderName("");
+      await loadFolders();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Failed to create folder.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const startRenamingFolder = (folder: Folder) => {
+    setEditingFolderId(folder.id);
+    setFolderNameDraft(folder.name);
+  };
+
+  const cancelRenamingFolder = () => {
+    setEditingFolderId(null);
+    setFolderNameDraft("");
+  };
+
+  const handleRenameFolder = async (event: FormEvent<HTMLFormElement>, id: number) => {
+    event.preventDefault();
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/folders/${id}`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ name: folderNameDraft })
+      });
+
+      if (!response.ok) {
+        throw new Error(await readError(response));
+      }
+
+      cancelRenamingFolder();
+      await loadFolders();
+    } catch (renameError) {
+      setError(renameError instanceof Error ? renameError.message : "Failed to rename folder.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteFolder = async (folder: Folder) => {
+    if (!window.confirm(`Delete folder "${folder.name}"? Its bookmarks stay and become unfiled.`)) {
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/folders/${folder.id}`, {
+        method: "DELETE"
+      });
+
+      if (!response.ok) {
+        throw new Error(await readError(response));
+      }
+
+      const folderValue = String(folder.id);
+      // Forget the deleted folder everywhere it could still be selected.
+      setForm((current) => (current.folderId === folderValue ? { ...current, folderId: "" } : current));
+      setEditForm((current) => (current.folderId === folderValue ? { ...current, folderId: "" } : current));
+      const nextFilter = folderFilter === folderValue ? "" : folderFilter;
+      if (nextFilter !== folderFilter) {
+        setFolderFilter(nextFilter);
+        pushUrlState(1, query, nextFilter);
+      }
+
+      await loadFolders();
+      await loadBookmarks(nextFilter === folderFilter ? page : 1, query, nextFilter);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Failed to delete folder.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const folderNameById = new Map(folders.map((folder) => [folder.id, folder.name]));
+  const activeFolderLabel =
+    folderFilter === "none"
+      ? " (unfiled)"
+      : folderFilter
+        ? ` in "${folderNameById.get(Number(folderFilter)) ?? "?"}"`
+        : "";
+
+  const folderChipClass = (value: string) =>
+    folderFilter === value ? "folder-chip is-active" : "folder-chip";
 
   return (
     <main className="app-shell">
@@ -301,6 +489,21 @@ export function App() {
             placeholder="https://example.com"
             required
           />
+          <label className="sr-only" htmlFor="bookmark-folder">
+            Folder
+          </label>
+          <select
+            id="bookmark-folder"
+            value={form.folderId}
+            onChange={(event) => updateForm("folderId", event.target.value)}
+          >
+            <option value="">No folder</option>
+            {folders.map((folder) => (
+              <option key={folder.id} value={String(folder.id)}>
+                {folder.name}
+              </option>
+            ))}
+          </select>
           <button type="submit" disabled={isSaving}>
             {isSaving ? "Saving" : "Add"}
           </button>
@@ -334,10 +537,114 @@ export function App() {
         ) : null}
       </form>
 
+      <section className="folder-bar" aria-label="Folders">
+        <div className="folder-chips">
+          <button type="button" className={folderChipClass("")} onClick={() => void selectFolder("")}>
+            All
+          </button>
+          <button type="button" className={folderChipClass("none")} onClick={() => void selectFolder("none")}>
+            Unfiled
+          </button>
+          {folders.map((folder) => (
+            <button
+              key={folder.id}
+              type="button"
+              className={folderChipClass(String(folder.id))}
+              onClick={() => void selectFolder(String(folder.id))}
+            >
+              {folder.name}
+            </button>
+          ))}
+          <button
+            type="button"
+            className="folder-manage-toggle"
+            onClick={() => setIsManagingFolders((current) => !current)}
+          >
+            {isManagingFolders ? "Done" : "Manage folders"}
+          </button>
+        </div>
+
+        {isManagingFolders ? (
+          <div className="folder-manage">
+            <form className="folder-create-form" onSubmit={handleCreateFolder}>
+              <label className="sr-only" htmlFor="new-folder-name">
+                New folder name
+              </label>
+              <input
+                id="new-folder-name"
+                type="text"
+                value={newFolderName}
+                onChange={(event) => setNewFolderName(event.target.value)}
+                placeholder="New folder name"
+                required
+              />
+              <button type="submit" disabled={isSaving}>
+                Add folder
+              </button>
+            </form>
+
+            {folders.length === 0 ? (
+              <p className="folder-manage-empty">No folders yet.</p>
+            ) : (
+              <ul className="folder-manage-list">
+                {folders.map((folder) => (
+                  <li key={folder.id}>
+                    {editingFolderId === folder.id ? (
+                      <form
+                        className="folder-rename-form"
+                        onSubmit={(event) => handleRenameFolder(event, folder.id)}
+                      >
+                        <label className="sr-only" htmlFor={`folder-name-${folder.id}`}>
+                          Folder name
+                        </label>
+                        <input
+                          id={`folder-name-${folder.id}`}
+                          type="text"
+                          value={folderNameDraft}
+                          onChange={(event) => setFolderNameDraft(event.target.value)}
+                          required
+                        />
+                        <button type="submit" disabled={isSaving}>
+                          Save
+                        </button>
+                        <button type="button" className="secondary-button" onClick={cancelRenamingFolder}>
+                          Cancel
+                        </button>
+                      </form>
+                    ) : (
+                      <>
+                        <span className="folder-manage-name">{folder.name}</span>
+                        <div className="item-actions">
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => startRenamingFolder(folder)}
+                          >
+                            Rename
+                          </button>
+                          <button
+                            type="button"
+                            className="danger-button"
+                            onClick={() => void handleDeleteFolder(folder)}
+                            disabled={isSaving}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
+      </section>
+
       <section className="bookmark-list" aria-label="Bookmarks">
         <div className="list-summary">
           <span>
-            {totalCount} bookmarks{query ? ` matching "${query}"` : ""}
+            {totalCount} bookmarks{query ? ` matching "${query}"` : ""}{activeFolderLabel}
           </span>
           <span>
             Page {page} of {totalPages}
@@ -362,6 +669,20 @@ export function App() {
                     onChange={(event) => updateEditForm("url", event.target.value)}
                     required
                   />
+                </label>
+                <label>
+                  Folder
+                  <select
+                    value={editForm.folderId}
+                    onChange={(event) => updateEditForm("folderId", event.target.value)}
+                  >
+                    <option value="">No folder</option>
+                    {folders.map((folder) => (
+                      <option key={folder.id} value={String(folder.id)}>
+                        {folder.name}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label>
                   Tags
@@ -396,6 +717,11 @@ export function App() {
                     {bookmark.title}
                   </a>
                   <span className="bookmark-url">{bookmark.url}</span>
+                  {bookmark.folderId && folderNameById.has(bookmark.folderId) ? (
+                    <div className="bookmark-tags" aria-label="Folder">
+                      <span className="bookmark-folder">{folderNameById.get(bookmark.folderId)}</span>
+                    </div>
+                  ) : null}
                   {bookmark.tags ? (
                     <div className="bookmark-tags" aria-label="Tags">
                       {splitTags(bookmark.tags).map((tag) => (
