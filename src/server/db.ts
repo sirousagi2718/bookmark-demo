@@ -41,7 +41,7 @@ export type BookmarkPage = {
 
 export type SearchFilter = {
   sql: string;
-  bindings: string[];
+  bindings: Array<string | number>;
 };
 
 const toBookmark = (row: BookmarkRow): Bookmark => ({

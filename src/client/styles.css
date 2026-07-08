@@ -19,6 +19,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -55,7 +56,7 @@ h1 {
 
 .bookmark-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 10px;
 }
 
@@ -67,10 +68,14 @@ h1 {
 }
 
 .bookmark-form input,
+.bookmark-form select,
 .bookmark-form textarea,
 .search-form input,
 .edit-form input,
-.edit-form textarea {
+.edit-form select,
+.edit-form textarea,
+.folder-create-form input,
+.folder-rename-form input {
   min-width: 0;
   padding: 0 14px;
   color: #111827;
@@ -81,8 +86,12 @@ h1 {
 }
 
 .bookmark-form input,
+.bookmark-form select,
 .search-form input,
-.edit-form input {
+.edit-form input,
+.edit-form select,
+.folder-create-form input,
+.folder-rename-form input {
   height: 44px;
 }
 
@@ -94,10 +103,14 @@ h1 {
 }
 
 .bookmark-form input:focus,
+.bookmark-form select:focus,
 .bookmark-form textarea:focus,
 .search-form input:focus,
 .edit-form input:focus,
-.edit-form textarea:focus {
+.edit-form select:focus,
+.edit-form textarea:focus,
+.folder-create-form input:focus,
+.folder-rename-form input:focus {
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgb(37 99 235 / 16%);
 }
@@ -105,6 +118,8 @@ h1 {
 .bookmark-form button,
 .search-form button,
 .item-actions button,
+.folder-create-form button,
+.folder-rename-form button,
 .pagination button {
   height: 44px;
   padding: 0 18px;
@@ -125,6 +140,113 @@ h1 {
 }
 
 .search-form .secondary-button {
+  color: #1f2933;
+  background: #e5eaf0;
+}
+
+.folder-bar {
+  display: grid;
+  gap: 12px;
+  padding-top: 18px;
+}
+
+.folder-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.folder-chip {
+  padding: 8px 14px;
+  color: #1f2933;
+  background: #ffffff;
+  border: 1px solid #c6ced8;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.folder-chip.is-active {
+  color: #ffffff;
+  background: #1e40af;
+  border-color: #1e40af;
+}
+
+.folder-manage-toggle {
+  margin-left: auto;
+  padding: 8px 14px;
+  color: #1f2933;
+  background: #e5eaf0;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.folder-manage {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #d7dde5;
+  border-radius: 8px;
+}
+
+.folder-create-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.folder-manage-empty {
+  margin: 0;
+  color: #526170;
+  font-size: 0.9rem;
+}
+
+.folder-manage-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.folder-manage-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #e5eaf0;
+}
+
+.folder-manage-name {
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
+.folder-rename-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  flex: 1;
+}
+
+.folder-rename-form button {
+  height: 36px;
+  padding: 0 12px;
+  font-size: 0.9rem;
+}
+
+.folder-rename-form input {
+  height: 36px;
+}
+
+.folder-rename-form .secondary-button {
   color: #1f2933;
   background: #e5eaf0;
 }
@@ -197,6 +319,18 @@ h1 {
   color: #24544a;
   background: #e7f6f1;
   border: 1px solid #bfe4d8;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.bookmark-folder {
+  max-width: 100%;
+  padding: 4px 8px;
+  overflow-wrap: anywhere;
+  color: #1e3a8a;
+  background: #e8eefb;
+  border: 1px solid #c4d3f2;
   border-radius: 999px;
   font-size: 0.82rem;
   font-weight: 700;
@@ -329,6 +463,16 @@ h1 {
 
   .search-form {
     grid-template-columns: 1fr;
+  }
+
+  .folder-create-form,
+  .folder-rename-form {
+    grid-template-columns: 1fr;
+  }
+
+  .folder-manage-list li {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .bookmark-form textarea {

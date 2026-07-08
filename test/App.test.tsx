@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/client/App";
 import type { Bookmark } from "../src/shared/bookmarks";
+import type { Folder } from "../src/shared/folders";
 
 const mockFetch = vi.fn<typeof fetch>();
 
@@ -16,6 +17,9 @@ const makeBookmark = (overrides: Partial<Bookmark> = {}): Bookmark => ({
   updatedAt: "2026-05-16T00:00:00.000Z",
   ...overrides
 });
+
+// The app loads folders once on mount, so most tests queue this response first.
+const foldersResponse = (folders: Folder[] = []) => Response.json({ folders });
 
 const bookmarksResponse = (
   bookmarks: Bookmark[],
@@ -42,7 +46,7 @@ afterEach(() => {
 
 describe("App", () => {
   it("loads and renders bookmarks with tags and memo", async () => {
-    mockFetch.mockResolvedValueOnce(bookmarksResponse([makeBookmark()]));
+    mockFetch.mockResolvedValueOnce(foldersResponse()).mockResolvedValueOnce(bookmarksResponse([makeBookmark()]));
 
     render(<App />);
 
@@ -57,6 +61,7 @@ describe("App", () => {
 
   it("adds a bookmark from the URL-only form and refreshes the first page", async () => {
     mockFetch
+      .mockResolvedValueOnce(foldersResponse())
       .mockResolvedValueOnce(bookmarksResponse([]))
       .mockResolvedValueOnce(Response.json({ bookmark: makeBookmark({ id: 2 }) }, { status: 201 }))
       .mockResolvedValueOnce(bookmarksResponse([makeBookmark({ id: 2 })]));
@@ -68,13 +73,14 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("button", { name: "Add" }));
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenNthCalledWith(2, "/api/bookmarks", {
+      expect(mockFetch).toHaveBeenNthCalledWith(3, "/api/bookmarks", {
         method: "POST",
         headers: {
           "content-type": "application/json"
         },
         body: JSON.stringify({
-          url: "https://example.com"
+          url: "https://example.com",
+          folderId: null
         })
       });
     });
@@ -85,6 +91,7 @@ describe("App", () => {
 
   it("edits a bookmark and refreshes the current page", async () => {
     mockFetch
+      .mockResolvedValueOnce(foldersResponse())
       .mockResolvedValueOnce(bookmarksResponse([makeBookmark()]))
       .mockResolvedValueOnce(Response.json({ bookmark: makeBookmark({ tags: "updated" }) }))
       .mockResolvedValueOnce(bookmarksResponse([makeBookmark({ tags: "updated" })]));
@@ -99,7 +106,7 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenNthCalledWith(2, "/api/bookmarks/1", {
+      expect(mockFetch).toHaveBeenNthCalledWith(3, "/api/bookmarks/1", {
         method: "PUT",
         headers: {
           "content-type": "application/json"
@@ -107,7 +114,8 @@ describe("App", () => {
         body: JSON.stringify({
           url: "https://example.com/",
           tags: "updated",
-          memo: "Useful reference"
+          memo: "Useful reference",
+          folderId: null
         })
       });
     });
@@ -119,6 +127,7 @@ describe("App", () => {
   it("confirms deletion before deleting and refreshing the list", async () => {
     vi.spyOn(window, "confirm").mockReturnValueOnce(true);
     mockFetch
+      .mockResolvedValueOnce(foldersResponse())
       .mockResolvedValueOnce(bookmarksResponse([makeBookmark()]))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(bookmarksResponse([]));
@@ -130,7 +139,7 @@ describe("App", () => {
 
     expect(window.confirm).toHaveBeenCalledWith('Delete "Example"?');
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenNthCalledWith(2, "/api/bookmarks/1", {
+      expect(mockFetch).toHaveBeenNthCalledWith(3, "/api/bookmarks/1", {
         method: "DELETE"
       });
     });
@@ -139,6 +148,7 @@ describe("App", () => {
 
   it("loads the next page", async () => {
     mockFetch
+      .mockResolvedValueOnce(foldersResponse())
       .mockResolvedValueOnce(
         bookmarksResponse([makeBookmark()], { page: 1, totalCount: 11, totalPages: 2 })
       )
@@ -161,6 +171,7 @@ describe("App", () => {
 
   it("searches bookmarks and keeps the query in pagination", async () => {
     mockFetch
+      .mockResolvedValueOnce(foldersResponse())
       .mockResolvedValueOnce(bookmarksResponse([]))
       .mockResolvedValueOnce(
         bookmarksResponse([makeBookmark({ title: "Search result" })], {
@@ -196,6 +207,7 @@ describe("App", () => {
 
   it("keeps the URL in sync after creating while search is active", async () => {
     mockFetch
+      .mockResolvedValueOnce(foldersResponse())
       .mockResolvedValueOnce(bookmarksResponse([]))
       .mockResolvedValueOnce(
         bookmarksResponse([makeBookmark({ title: "Search result" })], {
@@ -226,6 +238,7 @@ describe("App", () => {
     vi.spyOn(window, "confirm").mockReturnValueOnce(true);
     window.history.replaceState(null, "", "/?page=2&q=docs");
     mockFetch
+      .mockResolvedValueOnce(foldersResponse())
       .mockResolvedValueOnce(
         bookmarksResponse([makeBookmark()], { page: 2, totalCount: 11, totalPages: 2 })
       )
@@ -247,7 +260,7 @@ describe("App", () => {
 
   it("loads the initial search state from the URL", async () => {
     window.history.replaceState(null, "", "/?page=2&q=docs");
-    mockFetch.mockResolvedValueOnce(
+    mockFetch.mockResolvedValueOnce(foldersResponse()).mockResolvedValueOnce(
       bookmarksResponse([makeBookmark({ title: "URL state result" })], {
         page: 2,
         totalCount: 11,
@@ -264,7 +277,9 @@ describe("App", () => {
 
   it("shows error and preserves query on failed search", async () => {
     window.history.replaceState(null, "", "/?q=fail");
-    mockFetch.mockResolvedValueOnce(Response.json({ error: "Search failed." }, { status: 500 }));
+    mockFetch
+      .mockResolvedValueOnce(foldersResponse())
+      .mockResolvedValueOnce(Response.json({ error: "Search failed." }, { status: 500 }));
 
     render(<App />);
 
@@ -276,6 +291,7 @@ describe("App", () => {
 
   it("reloads bookmarks when browser history changes", async () => {
     mockFetch
+      .mockResolvedValueOnce(foldersResponse())
       .mockResolvedValueOnce(bookmarksResponse([]))
       .mockResolvedValueOnce(bookmarksResponse([makeBookmark({ title: "History result" })]));
 
