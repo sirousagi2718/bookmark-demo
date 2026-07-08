@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Bookmark } from "../shared/bookmarks";
+import type { Folder } from "../shared/folders";
 
 export type BookmarkRow = {
   id: number;
@@ -9,6 +10,7 @@ export type BookmarkRow = {
   title: string;
   tags: string;
   memo: string;
+  folder_id: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -18,6 +20,15 @@ export type BookmarkInput = {
   title: string;
   tags: string;
   memo: string;
+  // Omitted or null stores the bookmark as unfiled.
+  folderId?: number | null;
+};
+
+export type FolderRow = {
+  id: number;
+  name: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type BookmarkPage = {
@@ -39,11 +50,21 @@ const toBookmark = (row: BookmarkRow): Bookmark => ({
   title: row.title,
   tags: row.tags,
   memo: row.memo,
+  folderId: row.folder_id,
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
 
 const rowToBookmarkRow = (row: unknown): BookmarkRow => row as BookmarkRow;
+
+const toFolder = (row: FolderRow): Folder => ({
+  id: row.id,
+  name: row.name,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+});
+
+const rowToFolderRow = (row: unknown): FolderRow => row as FolderRow;
 
 export class BookmarkDatabase {
   private readonly db: DatabaseSync;
@@ -92,7 +113,7 @@ export class BookmarkDatabase {
     const offset = (page - 1) * pageSize;
     const rows = this.db
       .prepare(
-        `SELECT id, url, title, tags, memo, created_at, updated_at FROM bookmarks ${searchFilter.sql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`
+        `SELECT id, url, title, tags, memo, folder_id, created_at, updated_at FROM bookmarks ${searchFilter.sql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`
       )
       .all(...searchFilter.bindings, pageSize, offset)
       .map(rowToBookmarkRow);
@@ -110,9 +131,9 @@ export class BookmarkDatabase {
     const now = new Date().toISOString();
     const row = this.db
       .prepare(
-        "INSERT INTO bookmarks (url, title, tags, memo, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id, url, title, tags, memo, created_at, updated_at"
+        "INSERT INTO bookmarks (url, title, tags, memo, folder_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, url, title, tags, memo, folder_id, created_at, updated_at"
       )
-      .get(input.url, input.title, input.tags, input.memo, now, now);
+      .get(input.url, input.title, input.tags, input.memo, input.folderId ?? null, now, now);
 
     if (!row) {
       throw new Error("Failed to create bookmark.");
@@ -125,9 +146,9 @@ export class BookmarkDatabase {
     const now = new Date().toISOString();
     const row = this.db
       .prepare(
-        "UPDATE bookmarks SET url = ?, title = ?, tags = ?, memo = ?, updated_at = ? WHERE id = ? RETURNING id, url, title, tags, memo, created_at, updated_at"
+        "UPDATE bookmarks SET url = ?, title = ?, tags = ?, memo = ?, folder_id = ?, updated_at = ? WHERE id = ? RETURNING id, url, title, tags, memo, folder_id, created_at, updated_at"
       )
-      .get(input.url, input.title, input.tags, input.memo, now, id);
+      .get(input.url, input.title, input.tags, input.memo, input.folderId ?? null, now, id);
 
     return row ? toBookmark(rowToBookmarkRow(row)) : null;
   }
@@ -135,6 +156,47 @@ export class BookmarkDatabase {
   deleteBookmark(id: number): boolean {
     const result = this.db.prepare("DELETE FROM bookmarks WHERE id = ?").run(id);
     return result.changes > 0;
+  }
+
+  listFolders(): Folder[] {
+    return this.db
+      .prepare("SELECT id, name, created_at, updated_at FROM folders ORDER BY name")
+      .all()
+      .map(rowToFolderRow)
+      .map(toFolder);
+  }
+
+  createFolder(name: string): Folder {
+    const now = new Date().toISOString();
+    const row = this.db
+      .prepare(
+        "INSERT INTO folders (name, created_at, updated_at) VALUES (?, ?, ?) RETURNING id, name, created_at, updated_at"
+      )
+      .get(name, now, now);
+
+    if (!row) {
+      throw new Error("Failed to create folder.");
+    }
+
+    return toFolder(rowToFolderRow(row));
+  }
+
+  renameFolder(id: number, name: string): Folder | null {
+    const now = new Date().toISOString();
+    const row = this.db
+      .prepare("UPDATE folders SET name = ?, updated_at = ? WHERE id = ? RETURNING id, name, created_at, updated_at")
+      .get(name, now, id);
+
+    return row ? toFolder(rowToFolderRow(row)) : null;
+  }
+
+  deleteFolder(id: number): boolean {
+    const result = this.db.prepare("DELETE FROM folders WHERE id = ?").run(id);
+    return result.changes > 0;
+  }
+
+  folderExists(id: number): boolean {
+    return this.db.prepare("SELECT 1 FROM folders WHERE id = ?").get(id) !== undefined;
   }
 
   close() {
