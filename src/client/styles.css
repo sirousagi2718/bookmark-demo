@@ -278,6 +278,20 @@ h1 {
   border-radius: 8px;
 }
 
+/* The thumbnail column only exists when a bookmark actually has an image, so
+   items without one keep the original two-column layout. */
+.bookmark-item:has(.bookmark-thumb) {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.bookmark-thumb {
+  width: 120px;
+  height: 90px;
+  object-fit: cover;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+}
+
 .edit-form {
   grid-column: 1 / -1;
 }
@@ -490,6 +504,20 @@ h1 {
 
   .bookmark-item {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bookmark-item:has(.bookmark-thumb) {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  /* On narrow screens the actions drop below the thumbnail and content. */
+  .bookmark-item:has(.bookmark-thumb) .icon-actions {
+    grid-column: 1 / -1;
+  }
+
+  .bookmark-thumb {
+    width: 96px;
+    height: 72px;
   }
 
   .icon-actions {
