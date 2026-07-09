@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,7 +9,7 @@ import { BookmarkDatabase } from "../src/server/db";
 let tempDir: string;
 let db: BookmarkDatabase;
 
-const createTestApp = () => createApp({ db });
+const createTestApp = (ogpStorageDir?: string) => createApp({ db, ogpStorageDir });
 
 const addBookmark = (input: {
   url: string;
@@ -281,5 +282,61 @@ describe("local server folders API", () => {
     expect(deleted.status).toBe(204);
     expect(listedBody.bookmarks).toHaveLength(1);
     expect(listedBody.bookmarks[0]).toMatchObject({ id: bookmark.id, folderId: null });
+  });
+});
+
+describe("local server OGP images", () => {
+  it("stores the OGP image path when creating a bookmark", async () => {
+    // Routes the page URL to HTML (with og:image) and the image URL to bytes.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).endsWith("/cover.png")
+          ? new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), { headers: { "content-type": "image/png" } })
+          : new Response('<title>Example</title><meta property="og:image" content="/cover.png">', {
+              headers: { "content-type": "text/html" }
+            })
+      )
+    );
+    const ogpStorageDir = join(tempDir, "ogp");
+    const app = createTestApp(ogpStorageDir);
+
+    const created = await app.request("http://localhost/api/bookmarks", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com/page" })
+    });
+    const createdBody = await created.json() as { bookmark: { ogpImageUrl: string } };
+
+    expect(created.status).toBe(201);
+    expect(createdBody.bookmark.ogpImageUrl).toMatch(/^\/ogp\/[0-9a-f-]{36}\.png$/);
+    await expect(readdir(ogpStorageDir)).resolves.toHaveLength(1);
+  });
+
+  it("serves stored OGP images with cache headers", async () => {
+    const ogpStorageDir = join(tempDir, "ogp");
+    const fileName = `${randomUUID()}.png`;
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    await mkdir(ogpStorageDir, { recursive: true });
+    await writeFile(join(ogpStorageDir, fileName), bytes);
+    const app = createTestApp(ogpStorageDir);
+
+    const response = await app.request(`http://localhost/ogp/${fileName}`);
+    const body = new Uint8Array(await response.arrayBuffer());
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("image/png");
+    expect(response.headers.get("cache-control")).toBe("public, max-age=86400, immutable");
+    expect(body).toEqual(bytes);
+  });
+
+  it("returns 404 for missing or malformed image names", async () => {
+    const app = createTestApp(join(tempDir, "ogp"));
+
+    const missing = await app.request(`http://localhost/ogp/${randomUUID()}.png`);
+    const malformed = await app.request("http://localhost/ogp/not-a-uuid.png");
+
+    expect(missing.status).toBe(404);
+    expect(malformed.status).toBe(404);
   });
 });

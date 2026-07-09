@@ -445,4 +445,33 @@ describe("App", () => {
     expect(mockFetch).toHaveBeenLastCalledWith("/api/bookmarks?page=1&folderId=none");
     expect(window.location.search).toBe("?folderId=none");
   });
+
+  it("shows a thumbnail when the bookmark has an OGP image", async () => {
+    mockFetch
+      .mockResolvedValueOnce(foldersResponse())
+      .mockResolvedValueOnce(
+        bookmarksResponse([makeBookmark({ ogpImageUrl: "/ogp/abc.png" })])
+      );
+
+    // The thumbnail is decorative (alt="" and aria-hidden), so it is queried
+    // by class instead of an accessible role.
+    const { container } = render(<App />);
+
+    await screen.findByRole("link", { name: "Example" });
+    const thumb = container.querySelector("img.bookmark-thumb");
+    expect(thumb).not.toBeNull();
+    expect(thumb).toHaveAttribute("src", "/ogp/abc.png");
+    expect(thumb).toHaveAttribute("loading", "lazy");
+  });
+
+  it("shows no thumbnail when the bookmark has no OGP image", async () => {
+    mockFetch
+      .mockResolvedValueOnce(foldersResponse())
+      .mockResolvedValueOnce(bookmarksResponse([makeBookmark()]));
+
+    const { container } = render(<App />);
+
+    await screen.findByRole("link", { name: "Example" });
+    expect(container.querySelector("img.bookmark-thumb")).toBeNull();
+  });
 });
