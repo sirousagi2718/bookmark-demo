@@ -18,6 +18,25 @@ const IMAGE_EXTENSIONS: Record<string, string> = {
   "image/avif": "avif"
 };
 
+// Reverse of IMAGE_EXTENSIONS, used when serving stored files back.
+const CONTENT_TYPES: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  avif: "image/avif"
+};
+
+const STORED_FILE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.([a-z]+)$/;
+
+// Returns the content-type for a stored OGP file name, or null when the name
+// is not exactly "<uuid>.<known extension>". The strict pattern doubles as a
+// path-traversal guard: request names like "../secret" never match.
+export const ogpFileContentType = (fileName: string) => {
+  const match = fileName.toLowerCase().match(STORED_FILE_PATTERN);
+  return match ? CONTENT_TYPES[match[1]] ?? null : null;
+};
+
 const META_TAG_PATTERN = /<meta\b[^>]*>/gi;
 
 const readAttribute = (tag: string, name: string) => {

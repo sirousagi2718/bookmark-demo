@@ -6,6 +6,8 @@ export type Bookmark = {
   memo: string;
   // Omitted or null means the bookmark is unfiled. The server always returns it.
   folderId?: number | null;
+  // Path to the locally stored og:image ("/ogp/<name>"), or "" when there is none.
+  ogpImageUrl: string;
   createdAt: string;
   updatedAt: string;
 };

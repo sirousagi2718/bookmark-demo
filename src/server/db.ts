@@ -11,6 +11,7 @@ export type BookmarkRow = {
   tags: string;
   memo: string;
   folder_id: number | null;
+  ogp_image_url: string;
   created_at: string;
   updated_at: string;
 };
@@ -22,6 +23,8 @@ export type BookmarkInput = {
   memo: string;
   // Omitted or null stores the bookmark as unfiled.
   folderId?: number | null;
+  // Omitted stores "" — the same "no image" value existing rows carry.
+  ogpImageUrl?: string;
 };
 
 export type FolderRow = {
@@ -51,6 +54,9 @@ const toBookmark = (row: BookmarkRow): Bookmark => ({
   tags: row.tags,
   memo: row.memo,
   folderId: row.folder_id,
+  // Rows written before the ogp_image_url migration read back as "" anyway,
+  // but fall back defensively so the API never returns null here.
+  ogpImageUrl: row.ogp_image_url ?? "",
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
@@ -113,7 +119,7 @@ export class BookmarkDatabase {
     const offset = (page - 1) * pageSize;
     const rows = this.db
       .prepare(
-        `SELECT id, url, title, tags, memo, folder_id, created_at, updated_at FROM bookmarks ${searchFilter.sql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`
+        `SELECT id, url, title, tags, memo, folder_id, ogp_image_url, created_at, updated_at FROM bookmarks ${searchFilter.sql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`
       )
       .all(...searchFilter.bindings, pageSize, offset)
       .map(rowToBookmarkRow);
@@ -131,9 +137,9 @@ export class BookmarkDatabase {
     const now = new Date().toISOString();
     const row = this.db
       .prepare(
-        "INSERT INTO bookmarks (url, title, tags, memo, folder_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, url, title, tags, memo, folder_id, created_at, updated_at"
+        "INSERT INTO bookmarks (url, title, tags, memo, folder_id, ogp_image_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, url, title, tags, memo, folder_id, ogp_image_url, created_at, updated_at"
       )
-      .get(input.url, input.title, input.tags, input.memo, input.folderId ?? null, now, now);
+      .get(input.url, input.title, input.tags, input.memo, input.folderId ?? null, input.ogpImageUrl ?? "", now, now);
 
     if (!row) {
       throw new Error("Failed to create bookmark.");
@@ -146,9 +152,9 @@ export class BookmarkDatabase {
     const now = new Date().toISOString();
     const row = this.db
       .prepare(
-        "UPDATE bookmarks SET url = ?, title = ?, tags = ?, memo = ?, folder_id = ?, updated_at = ? WHERE id = ? RETURNING id, url, title, tags, memo, folder_id, created_at, updated_at"
+        "UPDATE bookmarks SET url = ?, title = ?, tags = ?, memo = ?, folder_id = ?, ogp_image_url = ?, updated_at = ? WHERE id = ? RETURNING id, url, title, tags, memo, folder_id, ogp_image_url, created_at, updated_at"
       )
-      .get(input.url, input.title, input.tags, input.memo, input.folderId ?? null, now, id);
+      .get(input.url, input.title, input.tags, input.memo, input.folderId ?? null, input.ogpImageUrl ?? "", now, id);
 
     return row ? toBookmark(rowToBookmarkRow(row)) : null;
   }
