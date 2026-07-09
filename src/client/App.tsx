@@ -41,6 +41,10 @@ const isValidFolderFilter = (value: string) => value === "" || value === "none" 
 
 const toFolderIdPayload = (value: string) => (value === "" ? null : Number(value));
 
+// Adding while a folder is open most likely means adding into that folder, so
+// the create form's select follows the filter ("none" and "all" mean no folder).
+const folderFilterToFormValue = (value: string) => (value && value !== "none" ? value : "");
+
 const splitTags = (tags: string) =>
   tags
     .split(",")
@@ -171,6 +175,7 @@ export function App() {
       setSearchInput(nextState.query);
       setQuery(nextState.query);
       setFolderFilter(nextState.folderId);
+      setForm((current) => ({ ...current, folderId: folderFilterToFormValue(nextState.folderId) }));
       // Back/forward navigation should show the same data as the URL.
       void loadBookmarks(nextState.page, nextState.query, nextState.folderId);
     };
@@ -179,6 +184,7 @@ export function App() {
     setSearchInput(initialState.query);
     setQuery(initialState.query);
     setFolderFilter(initialState.folderId);
+    setForm((current) => ({ ...current, folderId: folderFilterToFormValue(initialState.folderId) }));
     // useEffect cannot be async directly, so we start the async functions here.
     void loadFolders();
     void loadBookmarks(initialState.page, initialState.query, initialState.folderId);
@@ -346,12 +352,7 @@ export function App() {
 
     setFolderFilter(nextFolder);
     setEditingId(null);
-    // Adding while a folder is open most likely means adding into that folder,
-    // so keep the create form's select in sync with the filter.
-    setForm((current) => ({
-      ...current,
-      folderId: nextFolder && nextFolder !== "none" ? nextFolder : ""
-    }));
+    setForm((current) => ({ ...current, folderId: folderFilterToFormValue(nextFolder) }));
     pushUrlState(1, query, nextFolder);
     await loadBookmarks(1, query, nextFolder);
   };
@@ -539,10 +540,20 @@ export function App() {
 
       <section className="folder-bar" aria-label="Folders">
         <div className="folder-chips">
-          <button type="button" className={folderChipClass("")} onClick={() => void selectFolder("")}>
+          <button
+            type="button"
+            className={folderChipClass("")}
+            aria-pressed={folderFilter === ""}
+            onClick={() => void selectFolder("")}
+          >
             All
           </button>
-          <button type="button" className={folderChipClass("none")} onClick={() => void selectFolder("none")}>
+          <button
+            type="button"
+            className={folderChipClass("none")}
+            aria-pressed={folderFilter === "none"}
+            onClick={() => void selectFolder("none")}
+          >
             Unfiled
           </button>
           {folders.map((folder) => (
@@ -550,6 +561,7 @@ export function App() {
               key={folder.id}
               type="button"
               className={folderChipClass(String(folder.id))}
+              aria-pressed={folderFilter === String(folder.id)}
               onClick={() => void selectFolder(String(folder.id))}
             >
               {folder.name}
@@ -558,6 +570,8 @@ export function App() {
           <button
             type="button"
             className="folder-manage-toggle"
+            aria-expanded={isManagingFolders}
+            aria-controls="folder-manage-panel"
             onClick={() => setIsManagingFolders((current) => !current)}
           >
             {isManagingFolders ? "Done" : "Manage folders"}
@@ -565,7 +579,7 @@ export function App() {
         </div>
 
         {isManagingFolders ? (
-          <div className="folder-manage">
+          <div className="folder-manage" id="folder-manage-panel">
             <form className="folder-create-form" onSubmit={handleCreateFolder}>
               <label className="sr-only" htmlFor="new-folder-name">
                 New folder name
