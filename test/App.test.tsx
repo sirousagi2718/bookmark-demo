@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/client/App";
@@ -13,6 +13,14 @@ const makeBookmark = (overrides: Partial<Bookmark> = {}): Bookmark => ({
   title: "Example",
   tags: "docs, demo",
   memo: "Useful reference",
+  createdAt: "2026-05-16T00:00:00.000Z",
+  updatedAt: "2026-05-16T00:00:00.000Z",
+  ...overrides
+});
+
+const makeFolder = (overrides: Partial<Folder> = {}): Folder => ({
+  id: 1,
+  name: "Tech",
   createdAt: "2026-05-16T00:00:00.000Z",
   updatedAt: "2026-05-16T00:00:00.000Z",
   ...overrides
@@ -306,5 +314,134 @@ describe("App", () => {
     expect(await screen.findByRole("link", { name: "History result" })).toBeInTheDocument();
     expect(screen.getByLabelText("Search bookmarks")).toHaveValue("history");
     expect(mockFetch).toHaveBeenLastCalledWith("/api/bookmarks?page=1&q=history");
+  });
+
+  it("creates a folder from the manage panel", async () => {
+    mockFetch
+      .mockResolvedValueOnce(foldersResponse())
+      .mockResolvedValueOnce(bookmarksResponse([]))
+      .mockResolvedValueOnce(Response.json({ folder: makeFolder() }, { status: 201 }))
+      .mockResolvedValueOnce(foldersResponse([makeFolder()]));
+
+    render(<App />);
+
+    await screen.findByText("No bookmarks yet.");
+    await userEvent.click(screen.getByRole("button", { name: "Manage folders" }));
+    await userEvent.type(screen.getByLabelText("New folder name"), "Tech");
+    await userEvent.click(screen.getByRole("button", { name: "Add folder" }));
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenNthCalledWith(3, "/api/folders", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          name: "Tech"
+        })
+      });
+    });
+
+    // The reloaded folder list shows up both as a filter chip and in the panel.
+    expect(await screen.findByRole("button", { name: "Tech" })).toBeInTheDocument();
+    expect(mockFetch).toHaveBeenLastCalledWith("/api/folders");
+  });
+
+  it("adds a bookmark into the selected folder", async () => {
+    mockFetch
+      .mockResolvedValueOnce(foldersResponse([makeFolder()]))
+      .mockResolvedValueOnce(bookmarksResponse([]))
+      .mockResolvedValueOnce(
+        Response.json({ bookmark: makeBookmark({ id: 2, folderId: 1 }) }, { status: 201 })
+      )
+      .mockResolvedValueOnce(bookmarksResponse([makeBookmark({ id: 2, folderId: 1 })]));
+
+    render(<App />);
+
+    await screen.findByText("No bookmarks yet.");
+    await userEvent.type(screen.getByLabelText("URL"), "https://example.com");
+    await userEvent.selectOptions(screen.getByLabelText("Folder"), "1");
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenNthCalledWith(3, "/api/bookmarks", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          url: "https://example.com",
+          folderId: 1
+        })
+      });
+    });
+
+    await screen.findByRole("link", { name: "Example" });
+    expect(screen.getByText("Tech", { selector: ".bookmark-folder" })).toBeInTheDocument();
+  });
+
+  it("moves a bookmark to a folder from the edit form", async () => {
+    mockFetch
+      .mockResolvedValueOnce(foldersResponse([makeFolder()]))
+      .mockResolvedValueOnce(bookmarksResponse([makeBookmark()]))
+      .mockResolvedValueOnce(Response.json({ bookmark: makeBookmark({ folderId: 1 }) }))
+      .mockResolvedValueOnce(bookmarksResponse([makeBookmark({ folderId: 1 })]));
+
+    render(<App />);
+
+    await screen.findByRole("link", { name: "Example" });
+    await userEvent.click(screen.getByRole("button", { name: "Edit Example" }));
+    // Both the toolbar and the edit form have a Folder select, so scope to the item.
+    const editForm = screen.getByRole("article");
+    await userEvent.selectOptions(within(editForm).getByLabelText("Folder"), "1");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenNthCalledWith(3, "/api/bookmarks/1", {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          url: "https://example.com/",
+          tags: "docs, demo",
+          memo: "Useful reference",
+          folderId: 1
+        })
+      });
+    });
+
+    await screen.findByRole("link", { name: "Example" });
+    expect(screen.getByText("Tech", { selector: ".bookmark-folder" })).toBeInTheDocument();
+  });
+
+  it("filters bookmarks with the folder chips", async () => {
+    mockFetch
+      .mockResolvedValueOnce(foldersResponse([makeFolder()]))
+      .mockResolvedValueOnce(
+        bookmarksResponse([makeBookmark(), makeBookmark({ id: 2, title: "Filed", folderId: 1 })], {
+          totalCount: 2
+        })
+      )
+      .mockResolvedValueOnce(
+        bookmarksResponse([makeBookmark({ id: 2, title: "Filed", folderId: 1 })], { totalCount: 1 })
+      )
+      .mockResolvedValueOnce(bookmarksResponse([makeBookmark()], { totalCount: 1 }));
+
+    render(<App />);
+
+    await screen.findByRole("link", { name: "Example" });
+    await userEvent.click(screen.getByRole("button", { name: "Tech" }));
+
+    expect(await screen.findByRole("link", { name: "Filed" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Example" })).not.toBeInTheDocument();
+    expect(mockFetch).toHaveBeenLastCalledWith("/api/bookmarks?page=1&folderId=1");
+    expect(window.location.search).toBe("?folderId=1");
+
+    await userEvent.click(screen.getByRole("button", { name: "Unfiled" }));
+
+    expect(await screen.findByRole("link", { name: "Example" })).toBeInTheDocument();
+    expect(mockFetch).toHaveBeenLastCalledWith("/api/bookmarks?page=1&folderId=none");
+    expect(window.location.search).toBe("?folderId=none");
   });
 });
