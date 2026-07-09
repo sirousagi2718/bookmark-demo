@@ -1,12 +1,20 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { Hono } from "hono";
 import type { BookmarkDatabase } from "./db";
 import type { CreateBookmarkRequest, UpdateBookmarkRequest } from "../shared/bookmarks";
 import type { CreateFolderRequest, UpdateFolderRequest } from "../shared/folders";
+import { ogpFileContentType, storeOgpImage } from "./ogp";
 import { fetchPageTitle, normalizeUrl } from "./title";
 
 export type AppDependencies = {
   db: BookmarkDatabase;
+  // Where storeOgpImage keeps downloaded images. Optional so existing callers
+  // and tests keep working with the same default the server uses.
+  ogpStorageDir?: string;
 };
+
+const DEFAULT_OGP_STORAGE_DIR = join(process.cwd(), "data", "ogp");
 
 const PAGE_SIZE = 10;
 
@@ -100,7 +108,7 @@ const buildListFilter = (terms: string[], folder: FolderFilter) => {
 const isUniqueError = (error: unknown) =>
   error instanceof Error && error.message.toLowerCase().includes("unique");
 
-export const createApp = ({ db }: AppDependencies) => {
+export const createApp = ({ db, ogpStorageDir = DEFAULT_OGP_STORAGE_DIR }: AppDependencies) => {
   const app = new Hono();
 
   app.get("/api/bookmarks", (c) => {
@@ -142,9 +150,12 @@ export const createApp = ({ db }: AppDependencies) => {
     const tags = cleanTags((payload as CreateBookmarkRequest).tags);
     const memo = cleanText((payload as CreateBookmarkRequest).memo);
     const title = (await fetchPageTitle(url)) ?? url;
+    // storeOgpImage returns "" instead of throwing on any failure, so a broken
+    // or slow external site never prevents the bookmark from being saved.
+    const ogpImageUrl = await storeOgpImage(url, ogpStorageDir);
 
     try {
-      const bookmark = db.createBookmark({ url, title, tags, memo, folderId });
+      const bookmark = db.createBookmark({ url, title, tags, memo, folderId, ogpImageUrl });
       return c.json({ bookmark }, 201);
     } catch (error) {
       if (isUniqueError(error)) {
@@ -189,9 +200,11 @@ export const createApp = ({ db }: AppDependencies) => {
     const tags = cleanTags((payload as UpdateBookmarkRequest).tags);
     const memo = cleanText((payload as UpdateBookmarkRequest).memo);
     const title = (await fetchPageTitle(url)) ?? url;
+    // Same as creation: "" on failure keeps the update itself successful.
+    const ogpImageUrl = await storeOgpImage(url, ogpStorageDir);
 
     try {
-      const bookmark = db.updateBookmark(id, { url, title, tags, memo, folderId });
+      const bookmark = db.updateBookmark(id, { url, title, tags, memo, folderId, ogpImageUrl });
       if (!bookmark) {
         return c.json({ error: "Bookmark not found." }, 404);
       }
@@ -217,6 +230,27 @@ export const createApp = ({ db }: AppDependencies) => {
     }
 
     return c.body(null, 204);
+  });
+
+  app.get("/ogp/:name", async (c) => {
+    const name = c.req.param("name");
+    // The strict "<uuid>.<ext>" check also rejects path traversal like "../".
+    const contentType = ogpFileContentType(name);
+    if (!contentType) {
+      return c.json({ error: "Image not found." }, 404);
+    }
+
+    try {
+      const image = await readFile(join(ogpStorageDir, name));
+      return c.body(new Uint8Array(image), 200, {
+        "content-type": contentType,
+        // Stored names are random UUIDs and the files never change, so
+        // browsers can cache them aggressively.
+        "cache-control": "public, max-age=86400, immutable"
+      });
+    } catch {
+      return c.json({ error: "Image not found." }, 404);
+    }
   });
 
   app.get("/api/folders", (c) => {
