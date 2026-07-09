@@ -10,12 +10,19 @@ let db: BookmarkDatabase;
 
 const createTestApp = () => createApp({ db });
 
-const addBookmark = (input: { url: string; title: string; tags?: string; memo?: string }) =>
+const addBookmark = (input: {
+  url: string;
+  title: string;
+  tags?: string;
+  memo?: string;
+  folderId?: number | null;
+}) =>
   db.createBookmark({
     url: input.url,
     title: input.title,
     tags: input.tags ?? "",
-    memo: input.memo ?? ""
+    memo: input.memo ?? "",
+    folderId: input.folderId ?? null
   });
 
 beforeEach(async () => {
@@ -153,5 +160,126 @@ describe("local server bookmarks API", () => {
     });
     expect(deleted.status).toBe(204);
     expect(missing.status).toBe(404);
+  });
+});
+
+describe("local server folders API", () => {
+  it("creates, lists, renames, and deletes folders", async () => {
+    const app = createTestApp();
+    const request = (name: string) => ({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name })
+    });
+
+    const created = await app.request("http://localhost/api/folders", request(" Tech "));
+    const createdBody = await created.json() as { folder: { id: number; name: string } };
+    const duplicate = await app.request("http://localhost/api/folders", request("Tech"));
+    const blank = await app.request("http://localhost/api/folders", request("   "));
+
+    expect(created.status).toBe(201);
+    expect(createdBody.folder.name).toBe("Tech");
+    expect(duplicate.status).toBe(409);
+    expect(blank.status).toBe(400);
+
+    const listed = await app.request("http://localhost/api/folders");
+    const listedBody = await listed.json() as { folders: Array<{ name: string }> };
+
+    expect(listed.status).toBe(200);
+    expect(listedBody.folders.map((folder) => folder.name)).toEqual(["Tech"]);
+
+    const renamed = await app.request(`http://localhost/api/folders/${createdBody.folder.id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Reading" })
+    });
+
+    expect(renamed.status).toBe(200);
+    await expect(renamed.json()).resolves.toMatchObject({ folder: { name: "Reading" } });
+
+    const deleted = await app.request(`http://localhost/api/folders/${createdBody.folder.id}`, {
+      method: "DELETE"
+    });
+    const missing = await app.request(`http://localhost/api/folders/${createdBody.folder.id}`, {
+      method: "DELETE"
+    });
+
+    expect(deleted.status).toBe(204);
+    expect(missing.status).toBe(404);
+  });
+
+  it("assigns a folder to a bookmark on create and update", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("<title>Example</title>", { headers: { "content-type": "text/html" } }))
+    );
+    const folder = db.createFolder("Tech");
+    const app = createTestApp();
+
+    const created = await app.request("http://localhost/api/bookmarks", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com/filed", folderId: folder.id })
+    });
+    const createdBody = await created.json() as { bookmark: { id: number; folderId: number | null } };
+
+    expect(created.status).toBe(201);
+    expect(createdBody.bookmark.folderId).toBe(folder.id);
+
+    const unknownFolder = await app.request("http://localhost/api/bookmarks", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com/other", folderId: 999 })
+    });
+
+    expect(unknownFolder.status).toBe(400);
+
+    const updated = await app.request(`http://localhost/api/bookmarks/${createdBody.bookmark.id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com/filed", folderId: null })
+    });
+
+    expect(updated.status).toBe(200);
+    await expect(updated.json()).resolves.toMatchObject({ bookmark: { folderId: null } });
+  });
+
+  it("filters bookmarks by folder", async () => {
+    const folder = db.createFolder("Tech");
+    addBookmark({ url: "https://example.com/filed", title: "Filed", folderId: folder.id });
+    addBookmark({ url: "https://example.com/unfiled", title: "Unfiled" });
+    const app = createTestApp();
+
+    const filed = await app.request(`http://localhost/api/bookmarks?folderId=${folder.id}`);
+    const filedBody = await filed.json() as { bookmarks: Array<{ title: string }>; totalCount: number };
+
+    expect(filed.status).toBe(200);
+    expect(filedBody.totalCount).toBe(1);
+    expect(filedBody.bookmarks.map((bookmark) => bookmark.title)).toEqual(["Filed"]);
+
+    const unfiled = await app.request("http://localhost/api/bookmarks?folderId=none");
+    const unfiledBody = await unfiled.json() as { bookmarks: Array<{ title: string }>; totalCount: number };
+
+    expect(unfiledBody.totalCount).toBe(1);
+    expect(unfiledBody.bookmarks.map((bookmark) => bookmark.title)).toEqual(["Unfiled"]);
+
+    const all = await app.request("http://localhost/api/bookmarks");
+    const allBody = await all.json() as { totalCount: number };
+
+    expect(allBody.totalCount).toBe(2);
+  });
+
+  it("keeps bookmarks when their folder is deleted", async () => {
+    const folder = db.createFolder("Tech");
+    const bookmark = addBookmark({ url: "https://example.com/kept", title: "Kept", folderId: folder.id });
+    const app = createTestApp();
+
+    const deleted = await app.request(`http://localhost/api/folders/${folder.id}`, { method: "DELETE" });
+    const listed = await app.request("http://localhost/api/bookmarks");
+    const listedBody = await listed.json() as { bookmarks: Array<{ id: number; folderId: number | null }> };
+
+    expect(deleted.status).toBe(204);
+    expect(listedBody.bookmarks).toHaveLength(1);
+    expect(listedBody.bookmarks[0]).toMatchObject({ id: bookmark.id, folderId: null });
   });
 });
